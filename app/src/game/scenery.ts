@@ -349,3 +349,51 @@ function paintCaveRubble(c: Ctx, H: number, cave: Box) {
     c.beginPath(); c.ellipse(x, seabedY(x, H) + between(-1, 4), between(1.5, 3.5), between(1, 2.2), 0, 0, TAU); c.fill()
   }
 }
+
+// ------------------------------------------------------------- the backdrop
+/**
+ * Soft depth behind the reef: low, misty rock masses that fade upward into the
+ * open water, with no hard edges, no horizon line and no recognizable objects.
+ * Each layer is filled with a gradient that is clear at its highest peak and
+ * thickens lower down, so the tops dissolve into the water like distant terrain
+ * seen through fog. Nearer layers are a little darker and stronger.
+ */
+export function paintBackdrop(c: Ctx, W: number, H: number) {
+  const layers = [
+    // base height (fraction of H), bump size, color, strength, seed
+    { base: 0.78, amp: 0.2, rgb: '24,60,92', a: 0.45, seed: 1.7 },
+    { base: 0.86, amp: 0.15, rgb: '16,44,72', a: 0.6, seed: 4.1 },
+    { base: 0.93, amp: 0.1, rgb: '9,28,48', a: 0.7, seed: 7.3 },
+  ]
+  for (const L of layers) {
+    const pts: Pt[] = []
+    let top = H
+    for (let x = -40; x <= W + 40; x += 12) {
+      // broad, rolling masses from a few slow sine waves (no sharp peaks)
+      const u = x / W
+      const bump = 0.5 + 0.28 * Math.sin(u * 5.1 + L.seed) + 0.16 * Math.sin(u * 11.3 + L.seed * 2.3) + 0.06 * Math.sin(u * 23 + L.seed * 4)
+      const y = H * (L.base - L.amp * bump)
+      top = Math.min(top, y)
+      pts.push([x, y])
+    }
+    // a soft edge: the same shape drawn several times, each a little lower and
+    // fainter, so the outline blurs instead of ending in a line
+    const passes = 6, spread = H * 0.05
+    for (let k = 0; k < passes; k++) {
+      const dy = (k / (passes - 1)) * spread
+      const g = c.createLinearGradient(0, top + dy, 0, H)
+      g.addColorStop(0, `rgba(${L.rgb},0)`)
+      g.addColorStop(0.35, `rgba(${L.rgb},${(L.a * 0.55) / passes})`)
+      g.addColorStop(1, `rgba(${L.rgb},${L.a / passes})`)
+      c.fillStyle = g
+      c.beginPath(); c.moveTo(-40, H)
+      for (const [x, y] of pts) c.lineTo(x, y + dy)
+      c.lineTo(W + 40, H); c.closePath(); c.fill()
+    }
+  }
+  // a light, even haze over the lower water so the layers sit back in the distance
+  const haze = c.createLinearGradient(0, H * 0.5, 0, H)
+  haze.addColorStop(0, 'rgba(10,32,56,0)'); haze.addColorStop(1, 'rgba(8,26,46,.22)')
+  c.fillStyle = haze
+  c.fillRect(0, H * 0.5, W, H * 0.5)
+}
