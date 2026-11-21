@@ -72,6 +72,17 @@ html.lights-out .flake:not(.flake--glow) { opacity: 0.04 !important; }
   100% { transform: translate3d(-8px, 105vh, 0); }
 }
 
+/* ---------- lights-out cursor ---------- */
+html.lights-out, html.lights-out body { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='10' fill='%237dff9a' fill-opacity='0.25'/%3E%3Ccircle cx='14' cy='14' r='6' fill='%237dff9a' fill-opacity='0.45'/%3E%3Ccircle cx='14' cy='14' r='3.5' fill='%23d9ffe6'/%3E%3C/svg%3E") 14 14, auto; }
+html.lights-out a, html.lights-out button, html.lights-out summary, html.lights-out [role="button"] { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Ccircle cx='14' cy='14' r='10' fill='%237dff9a' fill-opacity='0.25'/%3E%3Ccircle cx='14' cy='14' r='6' fill='%237dff9a' fill-opacity='0.45'/%3E%3Ccircle cx='14' cy='14' r='3.5' fill='%23d9ffe6'/%3E%3C/svg%3E") 14 14, pointer; }
+.cursor-glow {
+  position: fixed; left: -110px; top: -110px; width: 220px; height: 220px; z-index: 60; pointer-events: none;
+  border-radius: 50%; background: radial-gradient(closest-side, rgba(125, 255, 154, 0.3), rgba(125, 255, 154, 0.09) 55%, transparent);
+  mix-blend-mode: screen; opacity: 0; transition: opacity 0.4s; will-change: transform;
+}
+.cursor-glow.is-active { opacity: 1; }
+html:not(.lights-out) .cursor-glow { display: none; }
+
 /* ---------- swimming sharks ---------- */
 .swimmers { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
 .swimmer { position: absolute; left: 0; opacity: 0; animation-name: swim-ltr; animation-timing-function: linear; animation-fill-mode: both; }

@@ -6,6 +6,7 @@ import { CartDrawer } from './components/CartDrawer'
 import { Footer } from './components/Footer'
 import { MarineSnow } from './components/MarineSnow'
 import { SwimmingSharks } from './components/SwimmingSharks'
+import { CursorGlow } from './components/CursorGlow'
 import { Home } from './views/Home'
 import { Shop } from './views/Shop'
 import { Thanks } from './views/Thanks'
@@ -33,6 +34,7 @@ export default function App() {
     <>
       <MarineSnow />
       <SwimmingSharks />
+      <CursorGlow on={lightsOut} />
       <Header count={cart.count} onCart={() => setCartOpen(true)} lightsOut={lightsOut} toggleLights={toggleLights} />
       <main>{page}</main>
       <Footer />
