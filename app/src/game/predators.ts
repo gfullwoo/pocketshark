@@ -20,6 +20,8 @@ export interface Pred {
   done: boolean // already caught the shark once this pass
   ph: number // animation phase
   entered: boolean
+  /** Crab only: walking, crouching before a leap, in the air, or resting after landing. */
+  crab?: { state: 'walk' | 'crouch' | 'air' | 'cool'; t: number; vx: number; vy: number; warned: boolean }
 }
 
 export interface Circle { x: number; y: number; r: number }
@@ -27,7 +29,7 @@ export interface Circle { x: number; y: number; r: number }
 export const PRED_INFO: Record<PredKind, { coming: string; caught: string; sees: string }> = {
   shark: { coming: 'A big shark is coming! Glow off or swim home', caught: 'Chomp! The big shark nipped you. Swim home!', sees: 'It sees your glow!' },
   squid: { coming: 'A squid is coming! Glow off or swim home', caught: 'The squid grabbed you! Wriggle home!', sees: 'The squid sees your glow!' },
-  crab: { coming: 'A crab is scuttling by! Stay off the seabed', caught: 'Pinch! The crab got you. Swim home!', sees: '' },
+  crab: { coming: 'A crab is scuttling by! Stay up high', caught: 'Pinch! The crab grabbed you. Swim home!', sees: 'The crab is about to jump!' },
 }
 
 const TAU = Math.PI * 2
@@ -190,11 +192,16 @@ function drawSquid(ctx: Ctx2D, p: Pred, t: number) {
 /** Crab walks sideways along the seabed, claws snapping. Drawn facing the viewer. */
 function drawCrab(ctx: Ctx2D, p: Pred, t: number) {
   const sc = p.s / 120
-  const step = Math.sin(p.ph * 2)
-  const snap = 0.35 + 0.35 * Math.max(0, Math.sin(t * 5))
+  const st = p.crab?.state ?? 'walk'
+  const step = st === 'walk' ? Math.sin(p.ph * 2) : 0
+  // claws snap while walking and spread wide for a grab
+  const snap = Math.max(0.35 + 0.35 * Math.max(0, Math.sin(t * 5)), p.open * 1.1)
+  // squash while crouching, stretch while leaping
+  const sy = st === 'crouch' ? 0.82 : st === 'air' ? 1.12 : 1
+  const sx = st === 'crouch' ? 1.12 : st === 'air' ? 0.92 : 1
   const shell = '#d4543a', dark = '#9c3424', light = '#f08a63'
   ctx.save()
-  ctx.translate(p.x, p.y + Math.abs(step) * -2 * sc); ctx.scale(sc, sc)
+  ctx.translate(p.x, p.y + Math.abs(step) * -2 * sc); ctx.scale(sc * sx, sc * sy)
   ctx.lineCap = 'round'
   // legs, three each side, stepping
   ctx.strokeStyle = dark; ctx.lineWidth = 6
@@ -214,9 +221,10 @@ function drawCrab(ctx: Ctx2D, p: Pred, t: number) {
     ctx.beginPath(); ctx.moveTo(side * 26, -6); ctx.quadraticCurveTo(side * 44, -10, side * 52, -24); ctx.stroke()
   }
   // claws (pincers) snapping
+  const reach = p.open * 14 // claws reach further up for a grab
   for (const side of [-1, 1]) {
     ctx.save()
-    ctx.translate(side * 60, -30)
+    ctx.translate(side * (60 + reach * 0.3), -30 - reach)
     ctx.scale(side, 1)
     ctx.fillStyle = shell
     ctx.beginPath(); ctx.ellipse(0, 0, 15, 12, -0.4, 0, TAU); ctx.fill()

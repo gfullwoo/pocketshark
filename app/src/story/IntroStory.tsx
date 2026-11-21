@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
 import { paintScenery } from '../game/scenery'
+import { getSettings, loadSettings } from '../settings'
 import { colors } from '../theme'
 import { CAPTIONS, captionAt, STORY_SECONDS, Story } from './intro'
 import { narrate, prepareNarrator, stopNarration } from './narrator'
@@ -40,6 +41,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
   useEffect(() => {
     void setAudioModeAsync({ playsInSilentMode: true }).catch(() => {})
     void prepareNarrator()
+    void loadSettings()
     const id = setTimeout(() => setRolling(true), 2000)
     return () => clearTimeout(id)
   }, [])
@@ -55,7 +57,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
   // Lower the music while the narrator speaks, so the words come through.
   const duck = (on: boolean) => {
-    try { music.volume = on ? 0.4 : 1 } catch { /* ignore */ }
+    try { music.volume = (on ? 0.4 : 1) * getSettings().music } catch { /* ignore */ }
   }
   useEffect(() => () => stopNarration(), [])
 
@@ -94,6 +96,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
     let cue = CAPTIONS.findIndex((c) => c.t >= from - 0.3)
     if (cue < 0) cue = CAPTIONS.length
     try {
+      music.volume = getSettings().music
       music.play()
       if (from > 0 || run > 0) void music.seekTo(from)
     } catch { /* play silently */ }

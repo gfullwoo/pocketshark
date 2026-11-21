@@ -116,3 +116,51 @@ describe('eating', () => {
     expect(Math.hypot(ex - w.mouthPos().x, ey - w.mouthPos().y)).toBeLessThan(2) // eaten at the mouth
   })
 })
+
+describe('crab', () => {
+  function crabUnder(w: World, x: number) {
+    const p = w.spawnPredator('crab')
+    p.warn = 0; p.entered = true; p.x = x; p.dir = 1
+    w.pred = p
+    return p
+  }
+  const run = (w: World, h: ReturnType<typeof hooks>, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) w.update(1 / 60, true, false, h)
+  }
+
+  it('crouches, then leaps up and grabs a shark swimming low above it', () => {
+    const w = makeWorld(), h = hooks()
+    const crab = crabUnder(w, 230)
+    const sharkY = crab.y - w.crabReach() * 0.6
+    const states = new Set<string>()
+    for (let i = 0; i < 120 && !h.onScare.mock.calls.length; i++) {
+      placeShark(w, 240, sharkY) // the shark hovers in place
+      w.update(1 / 60, true, false, h)
+      states.add(crab.crab!.state)
+    }
+    expect(states.has('crouch')).toBe(true)
+    expect(states.has('air')).toBe(true)
+    expect(h.onScare).toHaveBeenCalledTimes(1)
+    expect(h.onToast).toHaveBeenCalledWith('The crab is about to jump!', expect.any(String))
+  })
+
+  it('cannot reach a shark staying high in the water', () => {
+    const w = makeWorld(), h = hooks()
+    const crab = crabUnder(w, 230)
+    placeShark(w, 240, crab.y - w.crabReach() - w.size())
+    run(w, h, 2)
+    expect(crab.crab!.state).toBe('walk')
+    expect(h.onScare).not.toHaveBeenCalled()
+  })
+
+  it('lands back on the seabed and walks on after a miss', () => {
+    const w = makeWorld(), h = hooks()
+    const crab = crabUnder(w, 230)
+    placeShark(w, 240, crab.y - w.crabReach() * 0.6)
+    run(w, h, 0.45) // crouched, about to leap
+    placeShark(w, 30, 120) // the shark darts away up and to the side
+    run(w, h, 3)
+    expect(h.onScare).not.toHaveBeenCalled()
+    expect(['walk', 'cool']).toContain(crab.crab!.state)
+  })
+})

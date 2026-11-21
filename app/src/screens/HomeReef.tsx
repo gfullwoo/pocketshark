@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
 import { EAT_SOUND, useReefAudio } from '../game/audio'
+import { GameMenu } from '../ui/GameMenu'
 import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
@@ -50,6 +51,9 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const [hud, setHud] = useState<Hud | null>(null)
   const [toast, setToast] = useState<{ m: string; c?: string; id: number } | null>(null)
   const [card, setCard] = useState<Card | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const paused = useRef(false)
+  paused.current = menuOpen
 
   const showToast = useCallback((m: string, c?: string) => setToast({ m, c, id: Date.now() }), [])
 
@@ -108,8 +112,10 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       last = now
       const s = care.current, w = world.current, { W, H } = size.current
       if (s && W > 0 && scenery.current) {
-        w.update(dt, s.glow > 1, s.resting, hooks)
-        tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3 })
+        if (!paused.current) {
+          w.update(dt, s.glow > 1, s.resting, hooks)
+          tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3 })
+        }
         s.lastSeen = now
         const bg = scenery.current
         setPicture(record(W, H, makeFont, (ctx) => w.draw(ctx, () => ctx.drawPicture(bg), s.resting)))
@@ -147,6 +153,13 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
     scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH))
   }
 
+  const openMenu = () => {
+    // let go of the controls so nothing keeps moving behind the menu
+    world.current.setStick(0, 0)
+    world.current.glowHeld = false
+    setMenuOpen(true)
+  }
+
   // Left thumb: joystick. Right thumb: hold to glow. Both at once (multi-touch).
   const controls = useControls({
     insets,
@@ -172,16 +185,14 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
           <View style={styles.row}>
             <View style={styles.pill}><Text style={styles.pillLabel}>Glow Points</Text><Text style={styles.pillValue}>{hud.gp}</Text></View>
             <View style={styles.rowRight}>
-              {onWatchStory && (
-                <Pressable
-                  onPress={onWatchStory}
-                  style={({ pressed }) => [styles.pill, styles.storyPill, pressed && { opacity: 0.7 }]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Watch the story"
-                >
-                  <Text style={styles.storyPillText}>Story</Text>
-                </Pressable>
-              )}
+              <Pressable
+                onPress={openMenu}
+                style={({ pressed }) => [styles.pill, styles.storyPill, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open the menu"
+              >
+                <Text style={styles.storyPillText}>Menu</Text>
+              </Pressable>
               <View style={[styles.pill, styles.moodPill, moodStyle(hud.mood)]}><Text style={styles.moodText}>{MOOD_LABEL[hud.mood]}</Text></View>
             </View>
           </View>
@@ -212,16 +223,13 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         </Pressable>
       )}
 
-      {hud && (
-        <Pressable
-          onPress={() => audio.setMuted(!audio.muted)}
-          style={({ pressed }) => [styles.homeBtn, styles.soundBtn, { right: controls.homeButtonPosition.right, bottom: controls.homeButtonPosition.bottom + 58 }, pressed && { opacity: 0.7 }]}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: !audio.muted }}
-          accessibilityLabel="Music and sound effects"
-        >
-          <Text style={[styles.homeText, styles.soundText, audio.muted && { color: colors.muted }]}>{audio.muted ? 'Sound off' : 'Sound on'}</Text>
-        </Pressable>
+
+      {menuOpen && (
+        <GameMenu
+          onResume={() => setMenuOpen(false)}
+          onWatchStory={onWatchStory ? () => { setMenuOpen(false); onWatchStory() } : undefined}
+          onPreviewSound={() => playSound('eat-shrimp')}
+        />
       )}
 
       {card && <CareCard card={card} onClose={() => setCard(null)} onWatchStory={onWatchStory} />}
@@ -333,8 +341,6 @@ const styles = StyleSheet.create({
   homeBtn: { position: 'absolute', minHeight: 48, paddingHorizontal: 20, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   homeBtnOn: { borderColor: colors.cyan },
   homeText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  soundBtn: { minHeight: 44, paddingHorizontal: 16 },
-  soundText: { fontSize: 14 },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,8,16,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, padding: 22, borderRadius: 24, backgroundColor: colors.panelSolid, borderWidth: 1, borderColor: colors.line },
   cardTitle: { color: colors.text, fontSize: 26, fontWeight: '700', marginBottom: 10 },

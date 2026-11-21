@@ -170,13 +170,69 @@ export class World {
     }
     const s = Math.min(W, this.H) * 0.22 + 30
     const x = fromLeft ? -s * 0.8 : W + s * 0.8
-    return { ...base, s, x, y: seabedY(Math.max(0, Math.min(W, x)), SH) - s * 0.22, warn: 2 }
+    return {
+      ...base, s, x, y: seabedY(Math.max(0, Math.min(W, x)), SH) - s * 0.22, warn: 2,
+      crab: { state: 'walk', t: 0, vx: 0, vy: 0, warned: false },
+    }
   }
 
   /** Where the "!" warning for a predator shows. */
   private warnAt(p: Pred) {
     const x = p.x < this.W / 2 ? 28 : this.W - 28
     return { x, y: Math.max(40, Math.min(this.SH - 24, p.y)) }
+  }
+
+  /** Highest a crab can leap above its walking line: staying above this is safe. */
+  crabReach() { return this.SH * 0.42 }
+
+  /**
+   * The crab walks the seabed. When the pocket shark is above it and within
+   * reach, it crouches (a short warning), then leaps up at the shark with its
+   * claws open, lands, rests a moment, and walks on.
+   */
+  private updateCrab(pr: Pred, dt: number, home: boolean, hooks: WorldHooks) {
+    const c = (pr.crab ??= { state: 'walk', t: 0, vx: 0, vy: 0, warned: false }), W = this.W
+    const ground = (x: number) => seabedY(Math.max(0, Math.min(W, x)), this.SH) - pr.s * 0.22
+    const G = 1500 // gravity for the leap, px/s²
+    c.t -= dt
+    if (c.state === 'walk') {
+      pr.x += pr.dir * (W * 0.12 + 40) * dt
+      pr.y = ground(pr.x)
+      pr.open = Math.max(0, pr.open - dt * 3)
+      const dx = this.shark.x - pr.x, above = pr.y - this.shark.y
+      const inRange = Math.abs(dx) < pr.s * 1.7 && above > 0 && above < this.crabReach()
+      if (!pr.done && !home && inRange && c.t <= 0) {
+        c.state = 'crouch'
+        c.t = 0.4
+        if (!c.warned) { hooks.onToast(PRED_INFO.crab.sees, '#ff8fb1'); c.warned = true }
+      }
+    } else if (c.state === 'crouch') {
+      pr.y = ground(pr.x) + pr.s * 0.04
+      pr.open = Math.min(1, pr.open + dt * 4)
+      if (c.t <= 0) {
+        // aim at where the shark is now: rise to its height, drift sideways toward it
+        const rise = Math.min(this.crabReach(), Math.max(pr.s * 0.4, pr.y - this.shark.y + pr.s * 0.15))
+        c.vy = -Math.sqrt(2 * G * rise)
+        const flight = (2 * -c.vy) / G
+        c.vx = Math.max(-W * 0.8, Math.min(W * 0.8, (this.shark.x - pr.x) / (flight * 0.5)))
+        c.state = 'air'
+      }
+    } else if (c.state === 'air') {
+      pr.open = 1
+      pr.x += c.vx * dt
+      c.vy += G * dt
+      pr.y += c.vy * dt
+      const g = ground(pr.x)
+      if (c.vy > 0 && pr.y >= g) {
+        pr.y = g
+        c.state = 'cool'
+        c.t = 1.6
+      }
+    } else {
+      pr.y = ground(pr.x)
+      pr.open = Math.max(0, pr.open - dt * 2)
+      if (c.t <= 0) { c.state = 'walk'; c.t = 0.8 }
+    }
   }
 
   private caught(p: Pred, hooks: WorldHooks) {
@@ -324,8 +380,7 @@ export class World {
           pr.y += Math.sin(pr.ang) * v * dt
           pr.y = Math.max(-pr.s, Math.min(this.SH - pr.s * 0.12, pr.y))
         } else {
-          pr.x += pr.dir * (W * 0.12 + 40) * dt
-          pr.y = seabedY(Math.max(0, Math.min(W, pr.x)), this.SH) - pr.s * 0.22
+          this.updateCrab(pr, dt, home, hooks)
         }
         // any touch with any part of the predator is a catch (home is safe)
         if (!pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
