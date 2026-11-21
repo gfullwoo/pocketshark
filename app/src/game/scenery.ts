@@ -33,66 +33,9 @@ export function paintScenery(c: Ctx, W: number, H: number) {
   const between = (a: number, b: number) => a + r() * (b - a)
   const cave = caveBox(W, H)
 
-  // ---- cave: a rock outcrop rising from the left with a dark mouth ----
-  const pts: [number, number][] = [[-20, H]]
-  const steps = 14
-  for (let i = 0; i <= steps; i++) {
-    const f = i / steps
-    // dome profile: tall near the wall, sloping down to the seabed
-    const lift = Math.sin(Math.min(1, f * 1.15) * Math.PI * 0.5 + Math.PI * 0.5) // 1 → 0
-    const y = cave.top + (1 - lift) * cave.h * 0.92 + between(-10, 10) * (0.4 + lift)
-    pts.push([-20 + f * (cave.w + 40), Math.min(seabedY(f * cave.w, H), y)])
-  }
-  pts.push([cave.w + 40, H])
-  const rock = c.createLinearGradient(0, cave.top, 0, H)
-  rock.addColorStop(0, '#13263a')
-  rock.addColorStop(0.6, '#0a1828')
-  rock.addColorStop(1, '#050d18')
-  c.fillStyle = rock
-  c.beginPath()
-  c.moveTo(pts[0][0], pts[0][1])
-  for (let i = 1; i < pts.length - 1; i++) {
-    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
-    c.quadraticCurveTo(x, y, (x + nx) / 2, (y + ny) / 2)
-  }
-  c.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1])
-  c.closePath()
-  c.fill()
-  // moonlit rim along the top of the rock
-  c.strokeStyle = 'rgba(140,185,225,.2)'
-  c.lineWidth = 2
-  c.beginPath()
-  c.moveTo(pts[1][0], pts[1][1])
-  for (let i = 1; i < pts.length - 2; i++) {
-    const [x, y] = pts[i], [nx, ny] = pts[i + 1]
-    c.quadraticCurveTo(x, y, (x + nx) / 2, (y + ny) / 2)
-  }
-  c.stroke()
-  // rock texture: darker blotches and a few ledges
-  for (let i = 0; i < 18; i++) {
-    const x = between(0, cave.w * 0.9), y = between(cave.top + cave.h * 0.25, H - 10)
-    c.fillStyle = `rgba(2,6,12,${between(0.15, 0.35)})`
-    c.beginPath(); c.ellipse(x, y, between(8, 26), between(4, 12), between(-0.4, 0.4), 0, TAU); c.fill()
-  }
-  // the mouth
-  const mx = cave.w * 0.5, mw = cave.w * 0.24, mh = cave.h * 0.48, mb = seabedY(mx, H) + 4
-  const mouth = c.createRadialGradient(mx, mb - mh * 0.45, 4, mx, mb - mh * 0.4, mw * 1.3)
-  mouth.addColorStop(0, '#000104')
-  mouth.addColorStop(0.7, '#020610')
-  mouth.addColorStop(1, '#07111e')
-  c.fillStyle = mouth
-  c.beginPath()
-  c.moveTo(mx - mw, mb)
-  c.bezierCurveTo(mx - mw * 1.05, mb - mh * 0.7, mx - mw * 0.55, mb - mh, mx, mb - mh)
-  c.bezierCurveTo(mx + mw * 0.6, mb - mh, mx + mw * 1.1, mb - mh * 0.6, mx + mw, mb)
-  c.closePath()
-  c.fill()
-  c.strokeStyle = 'rgba(140,185,225,.1)'; c.lineWidth = 1.5; c.stroke()
-  // a few glowing specks deep inside, like tiny cave dwellers
-  for (let i = 0; i < 5; i++) {
-    c.fillStyle = `rgba(92,225,255,${between(0.25, 0.6)})`
-    c.beginPath(); c.arc(mx + between(-mw * 0.5, mw * 0.5), mb - between(mh * 0.15, mh * 0.6), between(0.8, 1.6), 0, TAU); c.fill()
-  }
+  // ---- cave: a craggy rock outcrop rising from the left, with a deep, jagged mouth ----
+  paintCave(c, W, H, cave)
+  for (let i = 0; i < 125; i++) r() // keep the reef below laid out exactly as before
 
   // ---- seabed ----
   const sand = c.createLinearGradient(0, H - 50, 0, H)
@@ -108,6 +51,8 @@ export function paintScenery(c: Ctx, W: number, H: number) {
     c.fillStyle = `rgba(120,150,180,${between(0.05, 0.14)})`
     c.beginPath(); c.ellipse(x, seabedY(x, H) + between(4, 18), between(2, 5), between(1, 3), 0, 0, TAU); c.fill()
   }
+
+  paintCaveRubble(c, H, cave)
 
   // ---- coral reef from the cave to the right wall ----
   const scale = Math.max(0.6, Math.min(1.1, W / 700))
@@ -241,4 +186,178 @@ export function drawKelp(c: Ctx, W: number, H: number, t: number) {
     }
   }
   c.restore()
+}
+
+
+// ------------------------------------------------------------------ the cave
+type Box = ReturnType<typeof caveBox>
+type Pt = [number, number]
+
+const ROCK_LIGHT = '#2b4258'
+const ROCK_MID = '#172a3d'
+const ROCK_DARK = '#0a1522'
+
+/** Mouth geometry, shared with the world's "at home" check (see World.atHome). */
+function mouthOf(cave: Box, H: number) {
+  const mx = cave.w * 0.5, mw = cave.w * 0.24, mh = cave.h * 0.48, mb = seabedY(mx, H) + 4
+  return { mx, mw, mh, mb }
+}
+
+/** A lumpy rock: a polygon with a noisy radius, lit from the upper right. */
+function boulder(c: Ctx, cx: number, cy: number, rx: number, ry: number, r: () => number, light = ROCK_LIGHT, dark = ROCK_DARK) {
+  const n = 9, pts: Pt[] = []
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + r() * 0.3, k = 0.78 + r() * 0.3
+    pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k])
+  }
+  const g = c.createLinearGradient(cx + rx * 0.5, cy - ry, cx - rx * 0.4, cy + ry)
+  g.addColorStop(0, light); g.addColorStop(0.55, ROCK_MID); g.addColorStop(1, dark)
+  c.fillStyle = g
+  c.beginPath(); c.moveTo(pts[0][0], pts[0][1])
+  for (let i = 1; i < n; i++) c.lineTo(pts[i][0], pts[i][1])
+  c.closePath(); c.fill()
+  c.strokeStyle = 'rgba(2,6,12,.55)'; c.lineWidth = 1.2; c.stroke()
+  // a pale edge where the light catches the top
+  c.strokeStyle = 'rgba(150,195,230,.18)'; c.lineWidth = 1.5
+  c.beginPath()
+  const top = pts.filter((p) => p[1] < cy).sort((a, b) => a[0] - b[0])
+  if (top.length > 1) { c.moveTo(top[0][0], top[0][1]); for (const p of top.slice(1)) c.lineTo(p[0], p[1]); c.stroke() }
+}
+
+function paintCave(c: Ctx, W: number, H: number, cave: Box) {
+  const r = rng(4417)
+  const between = (a: number, b: number) => a + r() * (b - a)
+  const { mx, mw, mh, mb } = mouthOf(cave, H)
+
+  // 1. the outcrop: an angular, craggy silhouette (straight facets, not a smooth dome)
+  const out: Pt[] = [[-20, H]]
+  const steps = 22
+  for (let i = 0; i <= steps; i++) {
+    const f = i / steps
+    const lift = Math.sin(Math.min(1, f * 1.12) * Math.PI * 0.5 + Math.PI * 0.5) // 1 → 0
+    const y = cave.top + (1 - lift) * cave.h * 0.92 + between(-14, 14) * (0.35 + lift)
+    out.push([-20 + f * (cave.w + 46), Math.min(seabedY(f * cave.w, H) + 6, y)])
+  }
+  out.push([cave.w + 46, H])
+  const rock = c.createLinearGradient(cave.w * 0.8, cave.top, 0, H)
+  rock.addColorStop(0, '#203549'); rock.addColorStop(0.45, ROCK_MID); rock.addColorStop(1, '#050d18')
+  c.fillStyle = rock
+  c.beginPath(); c.moveTo(out[0][0], out[0][1])
+  for (const p of out.slice(1)) c.lineTo(p[0], p[1])
+  c.closePath(); c.fill()
+
+  // 2. big boulders stacked into the outcrop give it chunky, rocky mass
+  const rocks: [number, number, number, number][] = [
+    [0.12, 0.2, 0.3, 0.2], [0.42, 0.18, 0.26, 0.17], [0.05, 0.5, 0.26, 0.22],
+    [0.86, 0.62, 0.22, 0.2], [0.72, 0.38, 0.2, 0.16], [0.22, 0.78, 0.24, 0.2], [0.95, 0.86, 0.18, 0.13],
+  ]
+  for (const [fx, fy, frx, fry] of rocks) {
+    const x = fx * cave.w, y = cave.top + fy * cave.h
+    if (y > seabedY(x, H)) continue
+    boulder(c, x, y, frx * cave.w, fry * cave.h, r)
+  }
+
+  // 3. rock layers: slanted cracks across the face, each with a pale lip under it
+  for (let i = 0; i < 6; i++) {
+    const y0 = cave.top + cave.h * between(0.18, 0.85), x0 = between(-10, cave.w * 0.3), len = between(cave.w * 0.25, cave.w * 0.6)
+    const tilt = between(-0.18, 0.06)
+    c.strokeStyle = 'rgba(2,6,12,.6)'; c.lineWidth = between(1.2, 2.2)
+    c.beginPath(); c.moveTo(x0, y0)
+    let x = x0, y = y0
+    while (x < x0 + len) { x += between(8, 18); y += (x - x0) * 0 + between(-3, 3) + tilt * 12; c.lineTo(x, y) }
+    c.stroke()
+    c.strokeStyle = 'rgba(150,195,230,.07)'; c.lineWidth = 1
+    c.beginPath(); c.moveTo(x0, y0 + 2); c.lineTo(x, y + 2); c.stroke()
+  }
+
+  // 4. the mouth: a jagged arch, with a thick shadowed rock lip around it
+  const arch = (k: number, jag: number): Pt[] => {
+    const pts: Pt[] = []
+    const n = 18
+    for (let i = 0; i <= n; i++) {
+      const a = Math.PI + (i / n) * Math.PI // left foot → over the top → right foot
+      const rx = mw * k * (1 + (i > n / 2 ? 0.06 : 0)), ry = mh * k
+      const j = i === 0 || i === n ? 0 : (r() - 0.5) * jag
+      pts.push([mx + Math.cos(a) * (rx + j), mb + Math.sin(a) * (ry + j) * 1.0])
+    }
+    return pts
+  }
+  const fillPts = (pts: Pt[], style: string | ReturnType<Ctx['createLinearGradient']>) => {
+    c.fillStyle = style
+    c.beginPath(); c.moveTo(pts[0][0], pts[0][1])
+    for (const p of pts.slice(1)) c.lineTo(p[0], p[1])
+    c.closePath(); c.fill()
+  }
+  // outer lip (rock rim, lit on top)
+  const lip = arch(1.22, 10)
+  const lipG = c.createLinearGradient(mx, mb - mh * 1.25, mx, mb)
+  lipG.addColorStop(0, '#2f475e'); lipG.addColorStop(0.5, '#1a2d40'); lipG.addColorStop(1, '#0c1826')
+  fillPts(lip, lipG)
+  c.strokeStyle = 'rgba(160,205,240,.22)'; c.lineWidth = 1.6
+  c.beginPath(); c.moveTo(lip[3][0], lip[3][1]); for (const p of lip.slice(4, 16)) c.lineTo(p[0], p[1]); c.stroke()
+  // the opening, dark and deep: rings of shadow going back into the rock
+  const open = arch(1, 8)
+  const deep = c.createRadialGradient(mx + mw * 0.1, mb - mh * 0.35, 2, mx, mb - mh * 0.45, mw * 1.25)
+  deep.addColorStop(0, '#000000'); deep.addColorStop(0.55, '#01040a'); deep.addColorStop(1, '#0a1624')
+  fillPts(open, deep)
+  // inner wall: a second, smaller arch set back and to one side, so the tunnel reads as going deeper
+  const back = arch(0.62, 5).map(([x, y]): Pt => [x + mw * 0.12, y + (mb - y) * 0.05])
+  c.strokeStyle = 'rgba(70,110,145,.18)'; c.lineWidth = 1.4
+  c.beginPath(); c.moveTo(back[0][0], back[0][1]); for (const p of back.slice(1)) c.lineTo(p[0], p[1]); c.stroke()
+  // rough inside edge of the opening
+  c.strokeStyle = 'rgba(0,0,0,.7)'; c.lineWidth = 3
+  c.beginPath(); c.moveTo(open[0][0], open[0][1]); for (const p of open.slice(1)) c.lineTo(p[0], p[1]); c.stroke()
+
+  // 5. stalactites hanging from the top of the mouth
+  for (let i = 0; i < 7; i++) {
+    const f = 0.18 + (i / 6) * 0.64 + between(-0.04, 0.04)
+    const a = Math.PI + f * Math.PI
+    const x = mx + Math.cos(a) * mw * 0.98, y = mb + Math.sin(a) * mh * 0.98
+    const len = between(mh * 0.08, mh * 0.22) * Math.sin(f * Math.PI), wd = between(3, 6)
+    const g = c.createLinearGradient(x, y, x, y + len)
+    g.addColorStop(0, '#22384c'); g.addColorStop(1, '#0d1a28')
+    c.fillStyle = g
+    c.beginPath(); c.moveTo(x - wd, y - 2); c.lineTo(x + wd, y - 2); c.lineTo(x + between(-1, 1), y + len); c.closePath(); c.fill()
+  }
+
+  // 6. moss and sea-growth on the upper surfaces
+  for (let i = 0; i < 26; i++) {
+    const f = between(0.02, 0.98)
+    const idx = Math.max(1, Math.min(out.length - 2, Math.round(f * (out.length - 3)) + 1))
+    const [x, y] = out[idx]
+    const green = r() < 0.6
+    c.fillStyle = green ? `rgba(60,150,110,${between(0.18, 0.35)})` : `rgba(150,90,140,${between(0.15, 0.3)})`
+    c.beginPath(); c.ellipse(x + between(-8, 8), y + between(2, 12), between(4, 11), between(2, 5), between(-0.4, 0.4), 0, TAU); c.fill()
+  }
+  // barnacles and tiny shells on the rock face
+  for (let i = 0; i < 16; i++) {
+    const x = between(cave.w * 0.03, cave.w * 0.97), y = cave.top + cave.h * between(0.25, 0.9)
+    const inMouth = Math.abs(x - mx) < mw * 1.25 && y > mb - mh * 1.25
+    if (inMouth || y > seabedY(x, H) - 4) continue
+    c.fillStyle = 'rgba(190,210,225,.16)'
+    c.beginPath(); c.arc(x, y, between(1.2, 2.4), 0, TAU); c.fill()
+  }
+  // a few glowing specks deep inside, like tiny cave dwellers
+  for (let i = 0; i < 6; i++) {
+    c.fillStyle = `rgba(92,225,255,${between(0.25, 0.6)})`
+    c.beginPath(); c.arc(mx + between(-mw * 0.45, mw * 0.55), mb - between(mh * 0.15, mh * 0.6), between(0.8, 1.6), 0, TAU); c.fill()
+  }
+}
+
+/** Fallen rocks and pebbles piled at the cave entrance, sitting on the sand. */
+function paintCaveRubble(c: Ctx, H: number, cave: Box) {
+  const r = rng(9021)
+  const between = (a: number, b: number) => a + r() * (b - a)
+  const { mx, mw } = mouthOf(cave, H)
+  const spots: [number, number][] = [[mx - mw * 1.35, 12], [mx - mw * 1.05, 7], [mx + mw * 1.15, 10], [mx + mw * 1.45, 15], [mx + mw * 0.75, 5]]
+  for (const [x, size] of spots) {
+    const s = size * (cave.w / 300)
+    boulder(c, x, seabedY(x, H) - s * 0.35, s * 1.3, s * 0.8, r)
+  }
+  for (let i = 0; i < 10; i++) {
+    const x = mx + between(-mw * 1.8, mw * 1.8)
+    if (Math.abs(x - mx) < mw * 0.7) continue // keep the doorway clear
+    c.fillStyle = `rgba(90,120,150,${between(0.15, 0.3)})`
+    c.beginPath(); c.ellipse(x, seabedY(x, H) + between(-1, 4), between(1.5, 3.5), between(1, 2.2), 0, 0, TAU); c.fill()
+  }
 }
