@@ -43,6 +43,8 @@ export function Play() {
   const [prizes, setPrizes] = useState<Prize[]>([])
   const [toast, setToast] = useState<{ m: string; c?: string; id: number } | null>(null)
   const [copied, setCopied] = useState('')
+  const [glowOn, setGlowOn] = useState(false)
+  const [touch] = useState(() => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
   useEffect(() => { nickRef.current = nick }, [nick])
 
   const onEnd = useCallback(async (r: EngineResult) => {
@@ -79,6 +81,7 @@ export function Play() {
         }
       },
       onToast: (m, c) => setToast({ m, c, id: Date.now() }),
+      onGlowButton: (on) => setGlowOn(on),
       onEnd: (r) => void onEnd(r),
     })
     engine.current = e
@@ -133,8 +136,14 @@ export function Play() {
         }
       } catch { /* play without the board */ }
     }
+    setGlowOn(false)
     setPhase('playing')
     engine.current?.start()
+  }
+
+  const toggleGlow = () => {
+    const on = engine.current?.setGlowButton(!glowOn) ?? false
+    setGlowOn(on)
   }
 
   const newName = () => {
@@ -193,6 +202,16 @@ export function Play() {
             <div className="gg-pill"><span>Time</span><b ref={timeRef}>60</b></div>
             <div className="gg-meter"><span>Glow</span><div className="gg-track"><i ref={barRef} /></div></div>
           </div>
+          {phase === 'playing' && (
+            <button
+              data-gg-ui
+              className={`gg-glowbtn${glowOn ? ' is-on' : ''}`}
+              onClick={toggleGlow}
+              aria-pressed={glowOn}
+            >
+              {glowOn ? 'Glow on' : 'Glow'}
+            </button>
+          )}
           {toast && <div key={toast.id} className="gg-toast" role="status" style={{ color: toast.c }}>{toast.m}</div>}
 
           {phase !== 'playing' && (
@@ -202,8 +221,12 @@ export function Play() {
                   phase === 'over' ? <h2>Counting your snacks…</h2> : (
                     <>
                       <h2>The pocket shark is hungry!</h2>
-                      <p>Hold your finger down to glow. Snacks swim to the light. Touch them to gulp them up.</p>
-                      <p>Watch out for the big shark! When it comes, let go so it can’t see your glow, or it will gobble you up.</p>
+                      {touch ? (
+                        <p>Drag to swim. Tap <b>Glow</b> to light up, and snacks swim to your light. Without it, they swim away!</p>
+                      ) : (
+                        <p>Move to swim. Hold the mouse button (or space) to glow, and snacks swim to your light. Without it, they swim away!</p>
+                      )}
+                      <p>Watch out for the big shark! When it comes, turn your glow off so it can’t see you, or it will gobble you up.</p>
                       <ul className="gg-legend">
                         {LEGEND.map((l) => (
                           <li key={l.t}><span style={{ background: l.c, boxShadow: l.glow ? `0 0 8px ${l.c}` : undefined }} />{l.t}</li>
@@ -215,7 +238,7 @@ export function Play() {
                   <>
                     <h2>{outcome.r.caught ? 'Gulp! The big shark got you.' : `${outcome.r.score} points!`}</h2>
                     {outcome.r.caught
-                      ? <p><b>{outcome.r.score} points</b> before you were caught. Tip: when you see the yellow warning, let go of the glow.</p>
+                      ? <p><b>{outcome.r.score} points</b> before you were caught. Tip: when you see the yellow warning, turn your glow off.</p>
                       : <p className="gg-stars" aria-label={`${stars} of 3 stars`}>{'★'.repeat(stars)}<span>{'★'.repeat(3 - stars)}</span></p>}
                     <p className="gg-rank">
                       {outcome.status === 'offline' && 'The leaderboard is taking a nap, so this score wasn’t saved.'}
