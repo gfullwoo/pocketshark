@@ -28,6 +28,11 @@ export interface Pred {
    */
   deep?: { z: number; fullS: number; x0: number; y0: number; tx: number; ty: number; dur: number }
   /**
+   * Big shark only, while coming from the background: 0 = swimming nose-first
+   * straight at the viewer, 1 = side-on. In between it is turning.
+   */
+  yaw?: number
+  /**
    * Squid only: swimming; aiming (turns its arms toward the shark and pulls the
    * long tentacles back); striking (shoots them out); retracting; resting.
    * `e` is how far the tentacles are thrown: -0.3 wound up … 0 relaxed … 1 fully out.
@@ -121,9 +126,13 @@ export function drawPredator(ctx: Ctx2D, p: Pred, t: number) {
 }
 
 function drawBigShark(ctx: Ctx2D, p: Pred, t: number) {
+  const yaw = p.yaw ?? 1
+  if (yaw < 0.5) { drawBigSharkFront(ctx, p, t, 1 - yaw * 1.3); return }
   const s = p.s / 230, wag = Math.sin(t * (p.hunt ? 9 : 5)) * 7, rim = 'rgba(150,190,225,.28)', fin = '#1a2632'
   ctx.save()
-  ctx.translate(p.x, p.y); ctx.scale(p.dir * s, s)
+  // finishing a turn from head-on: the side view opens out from narrow to full length
+  const turnX = yaw < 1 ? 0.3 + 0.7 * ((yaw - 0.5) / 0.5) : 1
+  ctx.translate(p.x, p.y); ctx.scale(p.dir * s * turnX, s)
   ctx.lineWidth = 1.5 / s; ctx.strokeStyle = rim; ctx.lineJoin = 'round'
   ctx.fillStyle = '#121b24'
   ctx.beginPath(); ctx.moveTo(34, 14); ctx.lineTo(16, 38); ctx.quadraticCurveTo(22, 26, 26, 15); ctx.closePath(); ctx.fill()
@@ -161,6 +170,72 @@ function drawBigShark(ctx: Ctx2D, p: Pred, t: number) {
   ctx.beginPath(); ctx.moveTo(42, 13); ctx.lineTo(12, 46); ctx.quadraticCurveTo(22, 30, 26, 16); ctx.closePath(); ctx.fill(); ctx.stroke()
   ctx.fillStyle = '#05070a'; ctx.beginPath(); ctx.ellipse(76, -7, 3.4, 2.8, 0, 0, TAU); ctx.fill()
   ctx.fillStyle = 'rgba(210,230,255,.85)'; ctx.beginPath(); ctx.arc(77, -8, 1, 0, TAU); ctx.fill()
+  ctx.restore()
+}
+
+/**
+ * The big shark seen nose-on, swimming straight at the viewer: a rounded snout
+ * with the eyes on either side, a wide mouth line, pectoral fins swept out and
+ * down, and the dorsal fin standing up behind. `w` squashes it sideways as it
+ * starts to turn (1 = straight on).
+ */
+function drawBigSharkFront(ctx: Ctx2D, p: Pred, t: number, w: number) {
+  const s = p.s / 230, rim = 'rgba(150,190,225,.28)', fin = '#1a2632'
+  const sway = Math.sin(t * 5) // the body rocks a little with each tail beat
+  ctx.save()
+  ctx.translate(p.x + sway * 3 * s, p.y)
+  ctx.rotate(sway * 0.05)
+  ctx.scale(s * w * (p.dir < 0 ? -1 : 1), s)
+  ctx.lineWidth = 1.5 / s; ctx.strokeStyle = rim; ctx.lineJoin = 'round'
+  // tail fin, far behind the body: only its tips show above and below
+  ctx.fillStyle = '#121b24'
+  ctx.beginPath(); ctx.moveTo(-3, -18); ctx.lineTo(-4 + sway * 6, -50); ctx.lineTo(4, -18); ctx.closePath(); ctx.fill()
+  ctx.beginPath(); ctx.moveTo(-3, 18); ctx.lineTo(-3 + sway * 5, 38); ctx.lineTo(3, 18); ctx.closePath(); ctx.fill()
+  // dorsal fin, standing up behind the head
+  ctx.fillStyle = fin
+  ctx.beginPath(); ctx.moveTo(-7, -20); ctx.quadraticCurveTo(-3, -46, 1, -66); ctx.quadraticCurveTo(5, -44, 7, -20); ctx.closePath(); ctx.fill(); ctx.stroke()
+  // pectoral fins swept out and down
+  for (const side of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(side * 18, 6); ctx.quadraticCurveTo(side * 44, 16, side * 66, 34 + sway * side * 2)
+    ctx.quadraticCurveTo(side * 40, 24, side * 16, 18); ctx.closePath(); ctx.fill(); ctx.stroke()
+  }
+  // body: dark back, pale belly
+  const g = ctx.createLinearGradient(0, -26, 0, 26)
+  g.addColorStop(0, '#16212c'); g.addColorStop(0.5, '#24323f'); g.addColorStop(1, '#5d6e80')
+  ctx.fillStyle = g
+  ctx.beginPath(); ctx.ellipse(0, 0, 28, 25, 0, 0, TAU); ctx.fill(); ctx.stroke()
+  // snout, slightly lighter, pointing at the viewer
+  const sn = ctx.createRadialGradient(0, -2, 1, 0, -2, 17)
+  sn.addColorStop(0, 'rgba(120,140,160,.45)'); sn.addColorStop(1, 'rgba(120,140,160,0)')
+  ctx.fillStyle = sn
+  ctx.beginPath(); ctx.ellipse(0, -2, 17, 14, 0, 0, TAU); ctx.fill()
+  // gill slits on both flanks
+  ctx.strokeStyle = 'rgba(10,16,22,.55)'; ctx.lineWidth = 1.4 / s
+  for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const x = side * (21 + i * 2.2)
+    ctx.beginPath(); ctx.moveTo(x, -4 + i); ctx.quadraticCurveTo(x + side * 1.5, 2, x, 8 - i); ctx.stroke()
+  }
+  // mouth: a wide curve under the snout, open with teeth when hunting
+  const o = p.open
+  if (o > 0.05) {
+    ctx.fillStyle = '#07090d'
+    ctx.beginPath(); ctx.moveTo(-17, 9); ctx.quadraticCurveTo(0, 13, 17, 9); ctx.quadraticCurveTo(0, 13 + o * 12, -17, 9); ctx.closePath(); ctx.fill()
+    ctx.fillStyle = 'rgba(230,235,240,.75)'
+    for (let i = -3; i <= 3; i++) {
+      const x = i * 4.4, y = 10.5 + (1 - Math.abs(i) / 4) * 1.6
+      ctx.beginPath(); ctx.moveTo(x - 1.6, y); ctx.lineTo(x, y + 3 * o); ctx.lineTo(x + 1.6, y); ctx.closePath(); ctx.fill()
+    }
+  } else {
+    ctx.beginPath(); ctx.moveTo(-17, 9); ctx.quadraticCurveTo(0, 15, 17, 9); ctx.stroke()
+  }
+  // eyes, set wide on the sides of the head
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = '#05070a'; ctx.beginPath(); ctx.ellipse(side * 17, -8, 2.6, 3, 0, 0, TAU); ctx.fill()
+    ctx.fillStyle = 'rgba(210,230,255,.85)'; ctx.beginPath(); ctx.arc(side * 17 + 0.6, -9, 0.8, 0, TAU); ctx.fill()
+  }
+  // nostrils
+  ctx.fillStyle = 'rgba(5,8,12,.7)'
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.ellipse(side * 5, -3, 1.4, 0.8, 0, 0, TAU); ctx.fill() }
   ctx.restore()
 }
 

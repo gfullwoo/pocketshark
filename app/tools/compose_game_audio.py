@@ -4,7 +4,7 @@ Render the in-game audio for the home reef: a quiet looping background tune and
 short sound effects. Original, in the same chiptune style as the story music.
 
   assets/music/reef-loop.m4a   gentle loop (F major, 84 BPM, 16 bars, ~46 s)
-  assets/sfx/eat-krill.wav     quick bubbly "nom"
+  assets/sfx/eat-krill*.wav    small prey: chomp, gulp and bubbles (3 pitches)
   assets/sfx/eat-shrimp.wav    crunchy pop
   assets/sfx/eat-gold.wav      sparkly chime
   assets/sfx/eat-glow.wav      shimmering twinkle (glowing plankton)
@@ -110,6 +110,22 @@ def sfx_krill():
         tr.add(i * 0.07, lowpass(w * decay(len(w), 30), 0.3), 0.8)
     b = tone('sine', hz(88), 0.08, hz(96), extra=0.08)  # little bubble
     tr.add(0.15, b * decay(len(b), 25), 0.35)
+    return finish(tr.buf)
+
+
+def sfx_bite(shift=0):
+    """Small prey: a soft chomp, a cute rising gulp and a bubble. `shift` (semitones) gives variants."""
+    tr = Track(0.42)
+    n = int(SR * 0.035)
+    chomp = noise(n) * decay(n, 90)
+    tr.add(0.0, lowpass(chomp, 0.25), 0.55)  # soft jaw snap
+    w = tone('tri', hz(62 + shift), 0.05, hz(55 + shift), extra=0.03)
+    tr.add(0.0, w * decay(len(w), 35), 0.6)  # "ch"
+    g = tone('pulse', hz(66 + shift), 0.11, hz(78 + shift), duty=0.5, extra=0.06)
+    tr.add(0.06, lowpass(g * adsr(len(g), 0.005, 0.05, 0.6, 0.05, 0.11), 0.22), 0.75)  # "omp" gulp
+    for i, m in enumerate([86, 91]):  # two little bubbles
+        bb = tone('sine', hz(m + shift), 0.05, hz(m + 5 + shift), extra=0.06)
+        tr.add(0.19 + i * 0.07, bb * decay(len(bb), 30), 0.3)
     return finish(tr.buf)
 
 
@@ -227,7 +243,7 @@ def reef_loop():
 
 
 def main():
-    sfx = {'eat-krill': sfx_krill(), 'eat-shrimp': sfx_shrimp(), 'eat-gold': sfx_gold(), 'eat-glow': sfx_glow(), 'hurt': sfx_hurt()}
+    sfx = {'eat-krill': sfx_bite(0), 'eat-krill-2': sfx_bite(2), 'eat-krill-3': sfx_bite(-2), 'eat-shrimp': sfx_shrimp(), 'eat-gold': sfx_gold(), 'eat-glow': sfx_glow(), 'hurt': sfx_hurt()}
     for name, x in sfx.items():
         p = os.path.join(ASSETS, 'sfx', f'{name}.wav')
         write_wav(p, x)

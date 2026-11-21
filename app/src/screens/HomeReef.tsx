@@ -2,7 +2,7 @@ import { Canvas, matchFont, Picture, type SkFont, type SkPicture } from '@shopif
 import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
-import { EAT_SOUND, useReefAudio } from '../game/audio'
+import { eatSound, useReefAudio } from '../game/audio'
 import { GameMenu } from '../ui/GameMenu'
 import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -92,7 +92,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         const s = care.current
         if (!s) return
         eat(s, kind)
-        playSound(EAT_SOUND[kind])
+        playSound(eatSound(kind))
         void Haptics.impactAsync(kind === 'gold' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light)
       },
       onScare: () => {

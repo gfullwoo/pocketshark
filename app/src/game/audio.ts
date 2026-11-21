@@ -8,6 +8,8 @@ import { getSettings, loadSettings, onSettings, type Settings } from '../setting
 
 const SOURCES = {
   'eat-krill': require('../../assets/sfx/eat-krill.wav'),
+  'eat-krill-2': require('../../assets/sfx/eat-krill-2.wav'),
+  'eat-krill-3': require('../../assets/sfx/eat-krill-3.wav'),
   'eat-shrimp': require('../../assets/sfx/eat-shrimp.wav'),
   'eat-gold': require('../../assets/sfx/eat-gold.wav'),
   'eat-glow': require('../../assets/sfx/eat-glow.wav'),
@@ -15,7 +17,13 @@ const SOURCES = {
 } as const
 type Sfx = keyof typeof SOURCES
 
-export const EAT_SOUND: Record<Snack, Sfx> = { krill: 'eat-krill', shrimp: 'eat-shrimp', gold: 'eat-gold', plankton: 'eat-glow' }
+const BITES: Sfx[] = ['eat-krill', 'eat-krill-2', 'eat-krill-3']
+let bite = 0
+/** The sound for eating a snack. Small prey cycle through three pitches so a run of bites isn't samey. */
+export function eatSound(kind: Snack): Sfx {
+  if (kind === 'krill') return BITES[bite++ % BITES.length]
+  return kind === 'shrimp' ? 'eat-shrimp' : kind === 'gold' ? 'eat-gold' : 'eat-glow'
+}
 
 // The menu's percentage is the playback volume (defaults: music 25%, effects 50%).
 const MUSIC_VOLUME = 1
@@ -82,8 +90,8 @@ export function useReefAudio() {
     const p = pool.players[pool.next]
     pool.next = (pool.next + 1) % pool.players.length
     try {
-      void p.seekTo(0)
-      p.play()
+      // rewind first, then play: a player that already finished won't restart otherwise
+      p.seekTo(0).then(() => p.play(), () => p.play())
     } catch { /* ignore a sound that can't play */ }
   }, [])
 

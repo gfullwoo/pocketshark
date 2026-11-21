@@ -203,18 +203,25 @@ export class World {
   private updateDeep(pr: Pred, dt: number, home: boolean, resting: boolean, hooks: WorldHooks) {
     const dp = pr.deep!
     dp.z = Math.min(1, dp.z + dt / dp.dur)
-    const e = dp.z * dp.z * (3 - 2 * dp.z)
-    pr.x = dp.x0 + (dp.tx - dp.x0) * e
-    pr.y = dp.y0 + (dp.ty - dp.y0) * e
+    const smooth = (v: number) => { const c = Math.max(0, Math.min(1, v)); return c * c * (3 - 2 * c) }
+    // nose-first toward the viewer for most of the way (only a little sideways
+    // drift), then it turns side-on and swims off sideways toward the exit
+    const TURN = 0.72
+    const turning = smooth((dp.z - TURN) / (1 - TURN))
+    if (pr.kind === 'shark') pr.yaw = turning
+    const lateral = pr.kind === 'shark' ? 0.3 * Math.min(1, dp.z / TURN) + 0.7 * turning : smooth(dp.z)
+    pr.x = dp.x0 + (dp.tx - dp.x0) * lateral
+    pr.y = dp.y0 + (dp.ty - dp.y0) * smooth(dp.z)
     pr.s = dp.fullS * (0.12 + 0.88 * dp.z)
     pr.ph += dt * (pr.kind === 'squid' ? 3.2 : 4)
     const d = Math.hypot(pr.x - this.shark.x, pr.y - this.shark.y)
     pr.minD = Math.min(pr.minD, d)
     // close enough to be in the same plane as the pocket shark: it can catch it
-    if (dp.z > 0.9 && !pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
+    if (dp.z > 0.9 && (pr.yaw ?? 1) >= 0.5 && !pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
     if (dp.z >= 1) {
       // turn and leave the screen to the left or right
       pr.deep = undefined
+      pr.yaw = undefined
       pr.s = dp.fullS
       pr.minD = 1e9
       if (pr.kind === 'squid') {
