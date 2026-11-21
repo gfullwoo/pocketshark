@@ -28,6 +28,8 @@ export interface Ctx {
   atHome: boolean
   /** Glow is on this frame. */
   glowing: boolean
+  /** How hard it's swimming, 0 (still) to 1 (full speed). Swimming wears health down faster. */
+  moving?: number
 }
 
 export const RULES = {
@@ -39,9 +41,10 @@ export const RULES = {
   dodgeGp: 5,
   /**
    * Health only comes back from eating and from resting in the cave. Out in the
-   * reef it wears down (per second); in the cave it slowly recovers.
+   * reef it wears down (per second): a little when still, much more when swimming
+   * (idle + swim × effort). In the cave it slowly recovers.
    */
-  healthDrain: 0.25,
+  healthDrain: { idle: 0.12, swim: 0.5 },
   caveHeal: 0.6,
   /** While resting (health hit 0), it recovers at home. */
   restRecover: 0.4,
@@ -114,7 +117,10 @@ export function tick(s: CareState, dt: number, ctx: Ctx): CareState {
   s.glow = clamp(s.glow + dt * (glowing ? -RULES.glow.drain : home ? RULES.glow.home : RULES.glow.out))
 
   if (s.resting) s.health = clamp(s.health + RULES.restRecover * dt)
-  else s.health = clamp(s.health + dt * (home ? RULES.caveHeal : -RULES.healthDrain))
+  else {
+    const drain = RULES.healthDrain.idle + RULES.healthDrain.swim * Math.max(0, Math.min(1, ctx.moving ?? 0))
+    s.health = clamp(s.health + dt * (home ? RULES.caveHeal : -drain))
+  }
 
   if (!s.resting && s.health <= 0) s.resting = true
   else if (s.resting && s.health >= RULES.wakeAt) s.resting = false

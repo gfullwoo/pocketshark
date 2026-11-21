@@ -37,8 +37,17 @@ describe('health', () => {
     a.health = b.health = 50
     tick(a, 10, { atHome: false, glowing: false })
     tick(b, 10, { atHome: true, glowing: false })
-    expect(a.health).toBeCloseTo(47.5)
+    expect(a.health).toBeCloseTo(48.8)
     expect(b.health).toBeCloseTo(56)
+  })
+
+  it('swimming drains health much faster than staying still', () => {
+    const still = newShark(T0), swim = newShark(T0)
+    still.health = swim.health = 50
+    tick(still, 10, { atHome: false, glowing: false, moving: 0 })
+    tick(swim, 10, { atHome: false, glowing: false, moving: 1 })
+    expect(still.health).toBeCloseTo(48.8)
+    expect(swim.health).toBeCloseTo(43.8) // 0.62/s at full speed
   })
 
   it('snacks restore health and pay Glow Points', () => {

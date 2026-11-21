@@ -82,6 +82,9 @@ export class World {
   private mouth = 0
   private flash = 0
   private fleeT = 0
+  /** Camera: zooms in on the shark and its cave while it's home. 1 = whole reef. */
+  private cam = { z: 1, x: 0, y: 0 }
+  static readonly HOME_ZOOM = 1.7
   /** The research submarine, while it's crossing the reef. */
   sub: Sub | null = null
   nextSub = rnd(25, 40)
@@ -112,7 +115,10 @@ export class World {
   private preyTarget() { return Math.round(6 + (this.W * this.H) / 60000) }
   size() { return Math.max(52, Math.min(90, Math.min(this.W, this.H) * 0.16)) }
   private lureR() { return Math.min(this.W, this.H) * 0.42 }
-  private maxSpeed() { return Math.max(210, Math.min(this.W, this.H) * 0.75) }
+  private maxSpeed() { return Math.max(158, Math.min(this.W, this.H) * 0.5625) }
+
+  /** How hard the shark is swimming right now, 0 (still) to 1 (full speed). Swimming costs health. */
+  get effort() { return Math.min(1, Math.hypot(this.vel.x, this.vel.y) / this.maxSpeed()) }
 
   /** Where the shark sits when it is home: inside the cave mouth. */
   home() {
@@ -453,10 +459,44 @@ export class World {
     this.scaredT = 2.5
   }
 
+  /** Where the middle of the playfield is on screen (above the on-screen controls). */
+  private camCenterY() { return this.SH * 0.55 }
+
+  /** Ease the camera toward a close-up of the cave while the shark is home, and back out when it leaves. */
+  private updateCamera(dt: number) {
+    const home = this.atHome() && !this.capture
+    const Z = World.HOME_ZOOM, c = this.cam
+    c.z += ((home ? Z : 1) - c.z) * Math.min(1, dt * 3)
+    if (Math.abs(c.z - 1) < 0.002) c.z = 1
+    // focus slides from the middle of the screen to the shark in its cave as the zoom grows
+    const k = (c.z - 1) / (Z - 1), h = this.home()
+    const fx = this.W / 2 + ((home ? this.shark.x : h.x) - this.W / 2) * k
+    const fy = this.camCenterY() + ((home ? this.shark.y : h.y) - this.camCenterY()) * k
+    c.x = fx
+    c.y = fy
+  }
+
+  /** Apply the camera: scale around the focus point, never showing past the edges of the reef. */
+  private applyCamera(ctx: Ctx2D) {
+    const { z } = this.cam
+    if (z === 1) return
+    const W = this.W, SH = this.SH, cy = this.camCenterY()
+    const fx = Math.max(W / (2 * z), Math.min(W - W / (2 * z), this.cam.x))
+    // keep the seabed edge where it is on screen (just above the controls)
+    const fy = Math.max(cy / z, Math.min(SH - (SH - cy) / z, this.cam.y))
+    ctx.translate(W / 2, cy)
+    ctx.scale(z, z)
+    ctx.translate(-fx, -fy)
+  }
+
+  /** The camera zoom right now (1 = the whole reef). */
+  get zoom() { return this.cam.z }
+
   /** `canGlow`: the care model has glow left. `resting`: shark is asleep at home. */
   update(dt: number, canGlow: boolean, resting: boolean, hooks: WorldHooks) {
     const { W, H } = this
     this.t += dt
+    this.updateCamera(dt)
     if (this.capture) { this.updateCapture(dt, hooks); return }
     if (this.fleeT > 0) this.fleeT -= dt
     if (this.scaredT > 0) this.scaredT -= dt
@@ -634,6 +674,9 @@ export class World {
       ctx.fillStyle = `rgba(200,225,255,${s.a})`
       ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, TAU); ctx.fill()
     }
+    // everything in the reef is drawn through the camera (zoomed in at home)
+    ctx.save()
+    this.applyCamera(ctx)
     // a predator far off in the background swims behind the reef
     if (this.pred && this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     // seabed below the scene (under the on-screen controls)
@@ -670,6 +713,7 @@ export class World {
     ctx.font = '600 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
     for (const f of this.floats) { ctx.globalAlpha = Math.max(0, Math.min(1, f.l)); ctx.fillStyle = f.c; ctx.fillText(f.txt, f.x, f.y) }
     ctx.globalAlpha = 1
+    ctx.restore()
     const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75)
     v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,4,10,.5)')
     ctx.fillStyle = v; ctx.fillRect(0, 0, W, H)

@@ -122,7 +122,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       if (s && W > 0 && scenery.current) {
         if (!paused.current) {
           w.update(dt, s.glow > 1, s.resting, hooks)
-          tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3 })
+          tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3, moving: w.effort })
         }
         s.lastSeen = now
         const bg = scenery.current
