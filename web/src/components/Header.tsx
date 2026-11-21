@@ -21,6 +21,7 @@ export function Header({ count, onCart, lightsOut, toggleLights }: Props) {
       <Logo />
       <nav className="header__nav">
         <a href="#/shop">Shop</a>
+        <a href="#/play">Play</a>
         <button className="link" onClick={() => section('real-shark')}>The real shark</button>
         <button className="link" onClick={() => section('faq')}>FAQ</button>
       </nav>

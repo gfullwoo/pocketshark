@@ -10,6 +10,7 @@
     "typecheck": "tsc -p . --noEmit"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^9.4.1",
     "@hono/node-server": "^2.1.6",
     "hono": "^4.13.16",
     "stripe": "^23.1.0",
