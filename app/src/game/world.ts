@@ -79,6 +79,10 @@ export class World {
   private mouth = 0
   private flash = 0
   private fleeT = 0
+  /** Seconds left of being sad and scared, hiding in the cave after a catch. */
+  private scaredT = 0
+  /** Hurt: running home after a catch, then sad and scared in the cave for a bit. */
+  get scared() { return this.fleeT > 0 || this.scaredT > 0 }
   private emptyWarned = false
   private snow = Array.from({ length: 50 }, () => ({ x: Math.random(), y: Math.random(), r: rnd(0.5, 1.8), s: rnd(0.006, 0.02), a: rnd(0.15, 0.45) }))
 
@@ -346,7 +350,8 @@ export class World {
     p.done = true
     p.hunt = false
     this.flash = 1
-    this.fleeT = 2.5
+    this.fleeT = 6 // runs for the cave (until it gets there)
+    this.scaredT = 0
     this.homing = true
     hooks.onScare()
     hooks.onToast(PRED_INFO[p.kind].caught, '#ff8fb1')
@@ -359,16 +364,19 @@ export class World {
     const { W, H } = this
     this.t += dt
     if (this.fleeT > 0) this.fleeT -= dt
-    const auto = resting || this.fleeT > 0 || this.homing
+    if (this.scaredT > 0) this.scaredT -= dt
+    const auto = resting || this.scared || this.homing
 
     // ---- swimming: joystick, or automatic when heading home ----
     const sp = this.maxSpeed()
     let want = { x: this.stick.x * sp, y: this.stick.y * sp }
     if (auto) {
       const h = this.home(), dx = h.x - this.shark.x, dy = h.y - this.shark.y, d = Math.hypot(dx, dy)
-      const fast = this.fleeT > 0 ? 1.15 : 0.8
+      const fast = this.fleeT > 0 ? 1.25 : 0.8
       want = d < 4 ? { x: 0, y: 0 } : { x: (dx / d) * Math.min(sp * fast, d * 4), y: (dy / d) * Math.min(sp * fast, d * 4) }
-      if (d < 4 && this.homing && !resting && this.fleeT <= 0) this.homing = false
+      // made it back to the cave after a catch: hide there, sad and scared, for a couple of seconds
+      if (this.fleeT > 0 && d < 8) { this.fleeT = 0; this.scaredT = 2.5 }
+      if (d < 4 && this.homing && !resting && !this.scared) this.homing = false
     }
     const k = Math.min(1, dt * 6)
     this.vel.x += (want.x - this.vel.x) * k
@@ -385,7 +393,7 @@ export class World {
       this.emptyWarned = true
     }
     if (!this.glowHeld) this.emptyWarned = false
-    this.glowOn = this.glowHeld && canGlow && !resting && this.fleeT <= 0
+    this.glowOn = this.glowHeld && canGlow && !resting && !this.scared
     this.gI += ((this.glowOn ? 1 : 0) - this.gI) * Math.min(1, dt * 6)
     const home = this.atHome()
 
@@ -442,7 +450,7 @@ export class World {
       if (p.y > this.SH - 30) p.vy -= 40 * dt
       // only the mouth catches: it has to actually reach the snack
       const dm = Math.hypot(mouth.x - p.x, mouth.y - p.y)
-      if (!resting && dm < s * 0.14 + K.r) {
+      if (!resting && !this.scared && dm < s * 0.14 + K.r) {
         p.eat = 0
         p.from = { x: p.x, y: p.y }
       }
@@ -609,7 +617,8 @@ export class World {
     const sc = this.size() / 80, { t, gI, mouth } = this
     ctx.save()
     ctx.translate(this.shark.x, this.shark.y); ctx.rotate(this.shark.tilt); ctx.scale(this.shark.dir * sc, sc)
-    ctx.translate(0, Math.sin(t * (resting ? 1 : 3)) * 2)
+    const scared = this.scared && !resting
+    ctx.translate(scared ? Math.sin(t * 55) * 0.9 : 0, Math.sin(t * (resting ? 1 : 3)) * 2) // trembles when scared
     const wag = Math.sin(t * (resting ? 2 : 8)) * 3
     ctx.fillStyle = '#6f7b88'
     ctx.beginPath(); ctx.moveTo(-36, -3); ctx.lineTo(-56, -17 + wag); ctx.quadraticCurveTo(-50, -2, -55, 9 + wag); ctx.lineTo(-36, 4); ctx.closePath(); ctx.fill()
@@ -634,11 +643,29 @@ export class World {
       // closed, sleepy eye
       ctx.strokeStyle = '#0b1118'; ctx.lineWidth = 1.6
       ctx.beginPath(); ctx.arc(21, -5, 3.2, 0.2, Math.PI - 0.2); ctx.stroke()
+    } else if (scared) {
+      // wide, worried eye with a tiny pupil, a sad brow and a tear
+      ctx.fillStyle = '#f4f8fc'; ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1
+      ctx.beginPath(); ctx.ellipse(21, -4, 5.6, 6.2, 0, 0, TAU); ctx.fill(); ctx.stroke()
+      ctx.fillStyle = '#0b1118'; ctx.beginPath(); ctx.arc(21.5, -2.6, 2, 0, TAU); ctx.fill()
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'
+      ctx.beginPath(); ctx.moveTo(15.5, -11.5); ctx.quadraticCurveTo(21, -15.5, 26.5, -15); ctx.stroke() // sad, raised brow
+      ctx.lineCap = 'butt'
+      const drip = (t * 0.9) % 1
+      ctx.fillStyle = `rgba(150,215,255,${0.95 * (1 - drip * 0.7)})`
+      ctx.beginPath(); ctx.moveTo(18, 2 + drip * 12); ctx.quadraticCurveTo(15.8, 6 + drip * 12, 18, 7.4 + drip * 12)
+      ctx.quadraticCurveTo(20.2, 6 + drip * 12, 18, 2 + drip * 12); ctx.fill() // a tear
+      // shiver marks over its head
+      ctx.strokeStyle = 'rgba(190,225,255,.8)'; ctx.lineWidth = 1.4
+      for (const [x, y] of [[4, -22], [12, -25], [20, -23]]) {
+        ctx.beginPath(); ctx.moveTo(x - 2, y + 2); ctx.lineTo(x, y - 2); ctx.lineTo(x + 2, y + 2); ctx.stroke()
+      }
     } else {
       ctx.fillStyle = '#0b1118'; ctx.beginPath(); ctx.arc(21, -4, 3.4, 0, TAU); ctx.fill()
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(22.2, -5.2, 1.1, 0, TAU); ctx.fill()
     }
-    if (mouth > 0.05) { ctx.fillStyle = '#2a1a22'; ctx.beginPath(); ctx.ellipse(27, 6, 3, 1 + mouth * 3, 0, 0, TAU); ctx.fill() }
+    if (scared) { ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(26, 10, 4, Math.PI + 0.5, TAU - 0.4); ctx.stroke() } // wobbly frown
+    else if (mouth > 0.05) { ctx.fillStyle = '#2a1a22'; ctx.beginPath(); ctx.ellipse(27, 6, 3, 1 + mouth * 3, 0, 0, TAU); ctx.fill() }
     else { ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(26, 4, 3.5, 0.3, 1.6); ctx.stroke() }
     ctx.restore()
   }

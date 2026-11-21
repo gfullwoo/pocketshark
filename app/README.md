@@ -23,8 +23,8 @@ Saving a file reloads the app on the phone. Shake the phone for the developer me
 
 - **Home reef:** drag to swim. The cave on the left is home. Tap **Home** to swim there.
 - **Glow:** tap **Glow** to light the pockets. Snacks swim toward the light and dart away from a dark shark. Glow drains while lit and recharges fastest at home.
-- **Predators:** a big shark, a squid or a crab arrives every 6–12 seconds, with no warning. Half the sharks and squid come from the background: they start small and far away, swim toward the cave while growing to full size (harmless until they're close), then leave left or right. Touching any part of one is a scare (−20 health) and the shark darts home. It never eats you. Getting past one earns +5 GP; the cave is always safe.
-- **Meters:** health and glow, plus a mood (happy, content, hungry, resting). Snacks restore health; glow drains fast and refills slowly. At 0 health the shark sleeps at home until it recovers.
+- **Predators:** a big shark, a squid or a crab arrives every 6–12 seconds, with no warning. Half the sharks and squid come from the background: they start small and far away, swim toward the cave while growing to full size (harmless until they're close), then leave left or right. Touching any part of one hurts (−20 health): the shark runs back to the cave on its own, then hides there sad and scared for a couple of seconds before you get control back. It never eats you. Getting past one earns +5 GP; the cave is always safe.
+- **Meters:** health and glow, plus a mood (happy, content, hungry, resting). Health only comes back from eating and from resting in the cave; glow drains fast and refills slowly. At 0 health the shark sleeps at home until it recovers.
 - **While you're away:** the shark rests at home, gets hungrier but never drops below the floors, and recharges. A "welcome back" card shows what changed. Catch-up stops after 72 hours.
 - **Glow Points:** snacks (1 / 3 / 10), +5 per hour spent happy, +10 daily visit, +5 for a dodge.
 - Everything is saved on the phone.

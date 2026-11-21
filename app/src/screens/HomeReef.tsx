@@ -28,13 +28,13 @@ const CONTROLS_HEIGHT = 170
 
 interface Hud {
   glow: number; health: number; gp: number
-  mood: Mood; need: string; glowOn: boolean; atHome: boolean
+  mood: Mood | 'scared'; need: string; glowOn: boolean; atHome: boolean
 }
 
 type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number }
 
-const MOOD_LABEL: Record<Mood, string> = {
-  happy: 'Happy', content: 'Content', hungry: 'Hungry', resting: 'Resting',
+const MOOD_LABEL: Record<Mood | 'scared', string> = {
+  scared: 'Scared', happy: 'Happy', content: 'Content', hungry: 'Hungry', resting: 'Resting',
 }
 
 export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
@@ -123,7 +123,9 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
           hudAt = now
           setHud({
             glow: s.glow, health: s.health, gp: s.gp,
-            mood: mood(s), need: need(s), glowOn: w.glowOn, atHome: w.atHome(),
+            mood: w.scared && !s.resting ? 'scared' : mood(s),
+            need: w.scared && !s.resting ? 'Ouch! Hiding in the cave until it feels safe.' : need(s),
+            glowOn: w.glowOn, atHome: w.atHome(),
           })
         }
         if (now - saveAt > 15_000) { saveAt = now; void saveCare(s) }
@@ -247,8 +249,9 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
   )
 }
 
-function moodStyle(m: Mood) {
+function moodStyle(m: Mood | 'scared') {
   switch (m) {
+    case 'scared': return { borderColor: colors.pink }
     case 'happy': return { borderColor: colors.glow }
     case 'hungry': return { borderColor: '#ffa877' }
     case 'resting': return { borderColor: colors.muted }

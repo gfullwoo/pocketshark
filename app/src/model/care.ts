@@ -37,8 +37,12 @@ export const RULES = {
   happyGpPerHour: 5,
   checkInGp: 10,
   dodgeGp: 5,
-  /** Health wears down over time (per second): faster out swimming than resting at home. */
-  healthDrain: { out: 0.25, home: 0.08 },
+  /**
+   * Health only comes back from eating and from resting in the cave. Out in the
+   * reef it wears down (per second); in the cave it slowly recovers.
+   */
+  healthDrain: 0.25,
+  caveHeal: 0.6,
   /** While resting (health hit 0), it recovers at home. */
   restRecover: 0.4,
   /** Glow per second: drains while lit; refills slowly at home, very slowly elsewhere. */
@@ -96,9 +100,9 @@ export function mood(s: CareState): Mood {
 export function need(s: CareState): string {
   switch (mood(s)) {
     case 'resting': return 'Resting at home. Let it sleep a little.'
-    case 'hungry': return 'Hungry! Hold Glow to call snacks.'
+    case 'hungry': return 'Hurt and hungry! Eat snacks or rest in the cave.'
     case 'happy': return 'Happy and healthy!'
-    default: return s.glow < 20 ? 'Glow is low. Rest at home to recharge.' : 'Doing okay. Snacks keep it healthy.'
+    default: return s.glow < 20 ? 'Glow is low. Rest at home to recharge.' : 'Doing okay. Snacks and cave rest keep it healthy.'
   }
 }
 
@@ -110,7 +114,7 @@ export function tick(s: CareState, dt: number, ctx: Ctx): CareState {
   s.glow = clamp(s.glow + dt * (glowing ? -RULES.glow.drain : home ? RULES.glow.home : RULES.glow.out))
 
   if (s.resting) s.health = clamp(s.health + RULES.restRecover * dt)
-  else s.health = clamp(s.health - dt * (home ? RULES.healthDrain.home : RULES.healthDrain.out))
+  else s.health = clamp(s.health + dt * (home ? RULES.caveHeal : -RULES.healthDrain))
 
   if (!s.resting && s.health <= 0) s.resting = true
   else if (s.resting && s.health >= RULES.wakeAt) s.resting = false

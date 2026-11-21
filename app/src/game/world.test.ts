@@ -259,3 +259,34 @@ describe('predators from the background', () => {
     for (const [msg] of h.onToast.mock.calls) expect(String(msg)).not.toMatch(/coming|sees|about to|striking|scuttling/i)
   })
 })
+
+describe('getting hurt', () => {
+  it('runs back to the cave, stays sad and scared there for a couple of seconds, then the player has control again', () => {
+    const w = makeWorld(), h = hooks()
+    const p = pred('shark', W * 0.7, 300)
+    w.pred = p
+    const c = hitCircles(p)[0]
+    placeShark(w, c.x, c.y)
+    w.update(1 / 60, true, false, h)
+    expect(h.onScare).toHaveBeenCalledTimes(1)
+    expect(w.scared).toBe(true)
+    w.pred = null
+    // the joystick and glow don't work while it runs home
+    w.setStick(1, 0)
+    w.glowHeld = true
+    let t = 0
+    while (!w.atHome() && t < 6) { w.update(1 / 60, true, false, h); t += 1 / 60 }
+    expect(w.atHome()).toBe(true)
+    expect(w.glowOn).toBe(false)
+    // hides in the cave, scared, for about 2.5 seconds
+    let hid = 0
+    while (w.scared && hid < 6) { w.setStick(1, 0); w.update(1 / 60, true, false, h); hid += 1 / 60 }
+    expect(hid).toBeGreaterThan(2)
+    expect(hid).toBeLessThan(3.5)
+    expect(w.atHome()).toBe(true)
+    // then it's the player's shark again
+    w.setStick(1, 0)
+    for (let i = 0; i < 60; i++) w.update(1 / 60, true, false, h)
+    expect(w.atHome()).toBe(false)
+  })
+})

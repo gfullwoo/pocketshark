@@ -32,12 +32,13 @@ describe('glow', () => {
 })
 
 describe('health', () => {
-  it('wears down over time, faster out swimming than at home', () => {
+  it('wears down out in the reef and only comes back from resting in the cave (or eating)', () => {
     const a = newShark(T0), b = newShark(T0)
+    a.health = b.health = 50
     tick(a, 10, { atHome: false, glowing: false })
     tick(b, 10, { atHome: true, glowing: false })
-    expect(a.health).toBeCloseTo(87.5)
-    expect(b.health).toBeCloseTo(89.2)
+    expect(a.health).toBeCloseTo(47.5)
+    expect(b.health).toBeCloseTo(56)
   })
 
   it('snacks restore health and pay Glow Points', () => {
