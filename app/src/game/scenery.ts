@@ -24,7 +24,7 @@ export const seabedY = (x: number, H: number) => H - 24 - Math.sin(x * 0.02) * 6
 
 export function caveBox(W: number, H: number) {
   const w = Math.max(150, Math.min(W * 0.42, 360))
-  const h = Math.max(150, Math.min(H * 0.42, 300))
+  const h = Math.max(115, Math.min(H * 0.31, 225))
   return { w, h, top: H - h }
 }
 
