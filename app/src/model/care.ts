@@ -72,7 +72,7 @@ export function mood(s: CareState): Mood {
 export function need(s: CareState): string {
   switch (mood(s)) {
     case 'resting': return 'Resting at home. Let it sleep a little.'
-    case 'peckish': return 'Hungry! Turn on your glow to call snacks.'
+    case 'peckish': return 'Hungry! Hold Glow to call snacks.'
     case 'uneasy': return s.safety < RULES.contentAt ? 'Feeling exposed. Swim home to feel safe.' : 'Not feeling great. Eat and rest at home.'
     case 'happy': return 'Happy and safe!'
     default: return 'Doing okay.'

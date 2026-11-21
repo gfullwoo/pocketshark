@@ -1,7 +1,8 @@
 import { Canvas, matchFont, Picture, type SkFont, type SkPicture } from '@shopify/react-native-skia'
 import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, Platform, Pressable, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native'
+import { AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
 import { paintScenery } from '../game/scenery'
@@ -20,10 +21,8 @@ const makeFont = (size: number) => {
 
 /** Show the "while you were away" card after this long. */
 const AWAY_CARD_SECONDS = 10 * 60
-/** Swim the shark a little above the finger so the finger doesn't hide it. */
-const FINGER_OFFSET = 50
-/** Space reserved at the bottom for the Home and Glow buttons. */
-const CONTROLS_HEIGHT = 124
+/** Space reserved at the bottom for the joystick and Glow button. */
+const CONTROLS_HEIGHT = 170
 
 interface Hud {
   fullness: number; glow: number; safety: number; health: number; gp: number
@@ -40,6 +39,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const insets = useSafeAreaInsets()
   const [picture, setPicture] = useState<SkPicture | null>(null)
   const world = useRef(new World())
+  // Web preview only: expose the world so a moment can be set up for checking.
+  if (Platform.OS === 'web') (globalThis as { __reef?: World }).__reef = world.current
   const care = useRef<CareState | null>(null)
   const scenery = useRef<SkPicture | null>(null)
   const size = useRef({ W: 0, H: 0 })
@@ -141,18 +142,15 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
     scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH))
   }
 
-  const steer = (e: GestureResponderEvent) => {
-    world.current.setTarget(e.nativeEvent.locationX, e.nativeEvent.locationY - FINGER_OFFSET)
-  }
-
-  const toggleGlow = () => {
-    const s = care.current, w = world.current
-    if (!s || s.resting) return
-    if (!w.glowOn && s.glow <= 1) { showToast('Out of glow. Rest at home to recharge', colors.pink); return }
-    w.glowOn = !w.glowOn
-    void Haptics.selectionAsync()
-    setHud((h) => (h ? { ...h, glowOn: w.glowOn } : h))
-  }
+  // Left thumb: joystick. Right thumb: hold to glow. Both at once (multi-touch).
+  const controls = useControls({
+    insets,
+    onStick: (x, y) => world.current.setStick(x, y),
+    onGlow: (held) => {
+      world.current.glowHeld = held
+      if (held) void Haptics.selectionAsync()
+    },
+  })
 
   return (
     <View style={styles.root} onLayout={onLayout}>
@@ -160,14 +158,9 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         {picture && <Picture picture={picture} />}
       </Canvas>
 
-      {/* Drag anywhere to swim. */}
-      <View
-        style={StyleSheet.absoluteFill}
-        onStartShouldSetResponder={() => true}
-        onMoveShouldSetResponder={() => true}
-        onResponderGrant={steer}
-        onResponderMove={steer}
-      />
+      {/* One layer reads every finger: joystick on the left, glow button on the right. */}
+      <View style={StyleSheet.absoluteFill} {...controls.touchProps} />
+      {hud && controls.render(hud.glowOn)}
 
       {hud && (
         <View pointerEvents="box-none" style={[styles.hud, { paddingTop: insets.top + 8 }]}>
@@ -204,25 +197,14 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       )}
 
       {hud && (
-        <View pointerEvents="box-none" style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}>
-          <Pressable
-            onPress={() => world.current.goHome()}
-            style={({ pressed }) => [styles.homeBtn, (hud.atHome || pressed) && styles.homeBtnOn]}
-            accessibilityRole="button"
-            accessibilityLabel="Swim home to the cave"
-          >
-            <Text style={styles.homeText}>{hud.atHome ? 'At home' : 'Home'}</Text>
-          </Pressable>
-          <Pressable
-            onPress={toggleGlow}
-            style={[styles.glowBtn, hud.glowOn && styles.glowBtnOn]}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: hud.glowOn }}
-            accessibilityLabel="Glow"
-          >
-            <Text style={[styles.glowText, hud.glowOn && styles.glowTextOn]}>{hud.glowOn ? 'Glow on' : 'Glow'}</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={() => world.current.goHome()}
+          style={({ pressed }) => [styles.homeBtn, controls.homeButtonPosition, (hud.atHome || pressed) && styles.homeBtnOn]}
+          accessibilityRole="button"
+          accessibilityLabel="Swim home to the cave"
+        >
+          <Text style={styles.homeText}>{hud.atHome ? 'At home' : 'Home'}</Text>
+        </Pressable>
       )}
 
       {card && <CareCard card={card} onClose={() => setCard(null)} onWatchStory={onWatchStory} />}
@@ -265,8 +247,8 @@ function CareCard({ card, onClose, onWatchStory }: { card: Card; onClose: () => 
           <>
             <Text style={styles.cardTitle}>Meet your pocket shark</Text>
             <Text style={styles.cardText}>It’s one of the rarest sharks in the world, and it’s counting on you.</Text>
-            <Text style={styles.cardText}>Drag to swim. Tap <Text style={styles.em}>Glow</Text> to light up the pockets behind its fins, and snacks swim to the light.</Text>
-            <Text style={styles.cardText}>Glowing also catches a big shark’s eye. When you see the yellow warning, turn the glow off or swim <Text style={styles.em}>Home</Text> to the cave.</Text>
+            <Text style={styles.cardText}>Use the joystick on the left to swim. Hold <Text style={styles.em}>Glow</Text> on the right to light up the pockets behind its fins, and snacks swim to the light.</Text>
+            <Text style={styles.cardText}>Glowing also catches a predator’s eye. Big sharks, squid and crabs are dangerous: don’t touch them! When you see the yellow warning, let go of Glow or swim <Text style={styles.em}>Home</Text> to the cave.</Text>
             <Text style={styles.cardText}>Keep it fed and safe, and it stays happy and earns Glow Points, even while you’re away.</Text>
           </>
         ) : (
@@ -331,14 +313,9 @@ const styles = StyleSheet.create({
   need: { color: colors.text, fontSize: 15, marginTop: 8, marginLeft: 4, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
   toastWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   toast: { color: colors.text, fontSize: 16, fontWeight: '600', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999, overflow: 'hidden', backgroundColor: 'rgba(6,22,40,0.88)', borderWidth: 1, borderColor: colors.line },
-  controls: { position: 'absolute', left: 16, right: 16, bottom: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  homeBtn: { minHeight: 52, paddingHorizontal: 22, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
+  homeBtn: { position: 'absolute', minHeight: 48, paddingHorizontal: 20, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   homeBtnOn: { borderColor: colors.cyan },
   homeText: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  glowBtn: { width: 96, height: 96, borderRadius: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panel, borderWidth: 2, borderColor: colors.line },
-  glowBtnOn: { backgroundColor: colors.glow, borderColor: colors.glow, shadowColor: colors.glow, shadowOpacity: 0.9, shadowRadius: 20, shadowOffset: { width: 0, height: 0 } },
-  glowText: { color: colors.glow, fontSize: 18, fontWeight: '700' },
-  glowTextOn: { color: '#04130a' },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,8,16,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, padding: 22, borderRadius: 24, backgroundColor: colors.panelSolid, borderWidth: 1, borderColor: colors.line },
   cardTitle: { color: colors.text, fontSize: 26, fontWeight: '700', marginBottom: 10 },
