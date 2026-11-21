@@ -43,14 +43,14 @@ export function Home() {
           </h1>
           <p className="lede">
             A soft, plush American pocket shark with glow-in-the-dark accents, including real pockets behind its fins. Comes in three sizes, from
-            life-size to jumbo.
+            life-size to jumbo, plus a keychain.
           </p>
           <div className="hero__cta">
             <a className="btn btn--glow" href="#/shop">Shop the {PRODUCT.name}</a>
             <button className="btn btn--ghost" onClick={() => scrollToId('details')}>See the details</button>
             <a className="btn btn--ghost" href="#/play">Play Glow &amp; Gulp</a>
           </div>
-          <p className="muted small">From {formatUsd(SIZES[0].priceCents)} · Free shipping over $50</p>
+          <p className="muted small">From {formatUsd(Math.min(...SIZES.map((s) => s.priceCents)))} · Free shipping over $50</p>
         </div>
         <div className="hero__art">
           <div className="halo" />
@@ -77,8 +77,8 @@ export function Home() {
 
       <section className="section" id="sizes">
         <div className="section__head">
-          <h2>Three sizes</h2>
-          <p className="muted">Same shark, same glow, three sizes.</p>
+          <h2>Pick your shark</h2>
+          <p className="muted">Three sizes and a keychain. Same shark, same glow.</p>
         </div>
         <div className="sizes">
           {SIZES.map((s) => (

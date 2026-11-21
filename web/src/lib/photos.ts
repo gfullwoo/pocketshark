@@ -5,6 +5,7 @@ import top from '../assets/photos/top.jpg'
 import sizePocket from '../assets/photos/size-pocket.jpg'
 import sizeCuddle from '../assets/photos/size-cuddle.jpg'
 import sizeJumbo from '../assets/photos/size-jumbo.jpg'
+import sizeKeychain from '../assets/photos/size-keychain.jpg'
 import type { SizeId } from '../../../server/src/catalog'
 
 export interface Photo {
@@ -25,6 +26,7 @@ export const HERO = PHOTOS[0]
 
 /** One photo per size, all shot on the same bed so the scale reads. */
 export const SIZE_PHOTOS: Record<SizeId, Photo> = {
+  keychain: { id: 'size-keychain', src: sizeKeychain, alt: 'Pocket shark keychain plush held in a hand', caption: 'The Keychain: a 5" Pocket on a chain and split ring.' },
   pocket: { id: 'size-pocket', src: sizePocket, alt: '5 inch Pocket shark plush on a bed', caption: 'The 5" Pocket: life-size, palm-sized.' },
   cuddle: { id: 'size-cuddle', src: sizeCuddle, alt: '12 inch Cuddle shark plush on a bed', caption: 'The 12" Cuddle: the everyday hug size.' },
   jumbo: { id: 'size-jumbo', src: sizeJumbo, alt: '18 inch Jumbo shark plush on a bed', caption: 'The 18" Jumbo: takes up half a pillow.' },

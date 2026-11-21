@@ -2,7 +2,7 @@
 // The storefront imports this file for display; the API imports it to build
 // Stripe Checkout line items, so the browser never decides what anything costs.
 
-export type SizeId = 'pocket' | 'cuddle' | 'jumbo'
+export type SizeId = 'keychain' | 'pocket' | 'cuddle' | 'jumbo'
 
 export interface Size {
   id: SizeId
@@ -18,6 +18,7 @@ export const PRODUCT = {
 }
 
 export const SIZES: Size[] = [
+  { id: 'keychain', name: 'Keychain', inches: 5, blurb: 'The Pocket on a chain and split ring. Clip it to keys, bags and backpacks.', priceCents: 1700 },
   { id: 'pocket', name: 'Pocket', inches: 5, blurb: 'Life-size. The only known specimen is 5.5".', priceCents: 1900 },
   { id: 'cuddle', name: 'Cuddle', inches: 12, blurb: 'Pillow-friendly, desk-guardian sized.', priceCents: 3900 },
   { id: 'jumbo', name: 'Jumbo', inches: 18, blurb: 'Deep-sea giant. Still the world’s cutest shark.', priceCents: 6900 },

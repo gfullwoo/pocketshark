@@ -7,6 +7,7 @@ describe('pricing', () => {
   it('prices each size', () => {
     expect(unitPriceCents('pocket')).toBe(1900)
     expect(unitPriceCents('jumbo')).toBe(6900)
+    expect(unitPriceCents('keychain')).toBe(1700)
   })
   it('totals a cart', () => {
     expect(subtotalCents({ items: [{ size: 'cuddle', qty: 2 }] })).toBe(7800)

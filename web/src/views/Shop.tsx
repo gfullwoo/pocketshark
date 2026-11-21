@@ -79,7 +79,11 @@ export function Shop({ cart, query, onAdded }: Props) {
           <li>Working pocket behind each front fin, lined in glow-in-the-dark fabric</li>
           <li>Glow accents charge in light, with no batteries</li>
           <li>Locking safety eyes, embroidered smile and gills</li>
-          <li>Ages 3+ · Free US shipping over $50</li>
+          {size === 'keychain' ? (
+            <li>Metal chain and split ring: not for children under 3 · Free US shipping over $50</li>
+          ) : (
+            <li>Ages 3+ · Free US shipping over $50</li>
+          )}
         </ul>
       </div>
     </section>

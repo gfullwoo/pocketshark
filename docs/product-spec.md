@@ -1,6 +1,6 @@
 # Pocket Shark Plush: Product Spec
 
-A plush version of the American pocket shark (*Mollisquama mississippiensis*), sold at mypocketshark.com. It's a single design: gray minky with glow-in-the-dark accents, in three sizes. Product photos are in `web/src/assets/photos/`.
+A plush version of the American pocket shark (*Mollisquama mississippiensis*), sold at mypocketshark.com. It's a single design: gray minky with glow-in-the-dark accents, in three sizes plus a keychain. Product photos are in `web/src/assets/photos/`.
 
 ## Lineup
 
@@ -9,6 +9,7 @@ A plush version of the American pocket shark (*Mollisquama mississippiensis*), s
 | Pocket | 5" | $19 | `PS-POCKET` |
 | Cuddle | 12" | $39 | `PS-CUDDLE` |
 | Jumbo | 18" | $69 | `PS-JUMBO` |
+| Keychain | 5" plush on a metal chain and split ring | $17 | `PS-KEYCHAIN` |
 
 The real shark measures 5.5", so the 5" Pocket is essentially life-size. That's the main marketing hook. Prices are set in `server/src/catalog.ts`.
 
@@ -45,6 +46,7 @@ The real shark measures 5.5", so the 5" Pocket is essentially life-size. That's 
 - **ASTM F963 toy safety:** use and abuse testing, seam strength, small parts, eye torque and tension, sharp points and edges, and flammability.
 - **CPSIA:** lead and phthalates testing by a CPSC-accepted third-party lab, and a Children's Product Certificate (CPC) for each product before selling.
 - **Glow pigment:** have the lab include the glow fabric in heavy-metals testing.
+- **Keychain:** the metal chain and split ring are small parts. Grade and label it as not for children under 3, and ask the lab how to test and certify it.
 - **State labeling:** some states have had stuffed-toy registration or law-label rules. Check what currently applies before printing tags.
 
 ## Manufacturing path
