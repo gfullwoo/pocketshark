@@ -27,14 +27,14 @@ const AWAY_CARD_SECONDS = 10 * 60
 const CONTROLS_HEIGHT = 170
 
 interface Hud {
-  fullness: number; glow: number; safety: number; health: number; gp: number
+  glow: number; health: number; gp: number
   mood: Mood; need: string; glowOn: boolean; atHome: boolean
 }
 
 type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number }
 
 const MOOD_LABEL: Record<Mood, string> = {
-  happy: 'Happy', content: 'Content', peckish: 'Peckish', uneasy: 'Uneasy', resting: 'Resting',
+  happy: 'Happy', content: 'Content', hungry: 'Hungry', resting: 'Resting',
 }
 
 export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
@@ -122,7 +122,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         if (now - hudAt > 200) {
           hudAt = now
           setHud({
-            fullness: s.fullness, glow: s.glow, safety: s.safety, health: s.health, gp: s.gp,
+            glow: s.glow, health: s.health, gp: s.gp,
             mood: mood(s), need: need(s), glowOn: w.glowOn, atHome: w.atHome(),
           })
         }
@@ -197,10 +197,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
             </View>
           </View>
           <View style={styles.meters}>
-            <Meter label="Fullness" value={hud.fullness} color="#ffa877" />
-            <Meter label="Glow" value={hud.glow} color={colors.glow} />
-            <Meter label="Safety" value={hud.safety} color={colors.cyan} />
             <Meter label="Health" value={hud.health} color={colors.pink} />
+            <Meter label="Glow" value={hud.glow} color={colors.glow} />
           </View>
           <Text style={styles.need}>{hud.need}</Text>
         </View>
@@ -252,8 +250,7 @@ function Meter({ label, value, color }: { label: string; value: number; color: s
 function moodStyle(m: Mood) {
   switch (m) {
     case 'happy': return { borderColor: colors.glow }
-    case 'peckish': return { borderColor: '#ffa877' }
-    case 'uneasy': return { borderColor: colors.pink }
+    case 'hungry': return { borderColor: '#ffa877' }
     case 'resting': return { borderColor: colors.muted }
     default: return null
   }
@@ -281,10 +278,8 @@ function CareCard({ card, onClose, onWatchStory }: { card: Card; onClose: () => 
             <Text style={styles.cardTitle}>Welcome back!</Text>
             <Text style={styles.cardText}>Your shark rested at home for {fmtAway(card.sum.seconds)}.</Text>
             <View style={styles.changes}>
-              <Change label="Fullness" a={card.sum.before.fullness} b={card.sum.after.fullness} />
-              <Change label="Glow" a={card.sum.before.glow} b={card.sum.after.glow} />
-              <Change label="Safety" a={card.sum.before.safety} b={card.sum.after.safety} />
               <Change label="Health" a={card.sum.before.health} b={card.sum.after.health} />
+              <Change label="Glow" a={card.sum.before.glow} b={card.sum.after.glow} />
             </View>
             {card.sum.after.gp > card.sum.before.gp && (
               <Text style={styles.cardText}>It earned {Math.round(card.sum.after.gp - card.sum.before.gp)} Glow Points while happy.</Text>

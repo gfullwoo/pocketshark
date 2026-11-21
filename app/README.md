@@ -23,8 +23,8 @@ Saving a file reloads the app on the phone. Shake the phone for the developer me
 
 - **Home reef:** drag to swim. The cave on the left is home. Tap **Home** to swim there.
 - **Glow:** tap **Glow** to light the pockets. Snacks swim toward the light and dart away from a dark shark. Glow drains while lit and recharges fastest at home.
-- **Big shark:** passes every 25–45 seconds after a yellow "!" warning. If it catches you glowing, you get a scare (less safety and health) and dart home. It never eats you. Staying dim or at home earns +5 GP.
-- **Meters:** fullness, glow, safety, health, plus a mood (happy, content, peckish, uneasy, resting). At 0 health the shark sleeps at home until it recovers.
+- **Predators:** a big shark, a squid or a crab arrives every 6–12 seconds after a yellow "!" warning. Touching any part of one is a scare (−20 health) and the shark darts home. It never eats you. Getting past one earns +5 GP; the cave is always safe.
+- **Meters:** health and glow, plus a mood (happy, content, hungry, resting). Snacks restore health; glow drains fast and refills slowly. At 0 health the shark sleeps at home until it recovers.
 - **While you're away:** the shark rests at home, gets hungrier but never drops below the floors, and recharges. A "welcome back" card shows what changed. Catch-up stops after 72 hours.
 - **Glow Points:** snacks (1 / 3 / 10), +5 per hour spent happy, +10 daily visit, +5 for a dodge.
 - Everything is saved on the phone.

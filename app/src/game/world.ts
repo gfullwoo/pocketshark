@@ -31,10 +31,10 @@ interface Part { x: number; y: number; vx: number; vy: number; l: number; c: str
 interface Float { x: number; y: number; txt: string; c: string; l: number }
 
 const KINDS: Record<Kind, { r: number; col: string; spd: number; w: number; label: string }> = {
-  krill: { r: 5, col: '#ff8fb1', spd: 26, w: 6, label: '+1' },
-  shrimp: { r: 8, col: '#ffd84d', spd: 34, w: 3, label: '+3' },
-  gold: { r: 9, col: '#ffd166', spd: 58, w: 0.4, label: '+10' },
-  plankton: { r: 6, col: '#7dff9a', spd: 16, w: 1.4, label: '+glow' },
+  krill: { r: 5, col: '#ff8fb1', spd: 36, w: 6, label: '+1' },
+  shrimp: { r: 8, col: '#ffd84d', spd: 48, w: 3, label: '+3' },
+  gold: { r: 9, col: '#ffd166', spd: 80, w: 0.4, label: '+10' },
+  plankton: { r: 6, col: '#7dff9a', spd: 22, w: 1.4, label: '+glow' },
 }
 const KLIST = Object.keys(KINDS) as Kind[]
 const KW = KLIST.reduce((s, k) => s + KINDS[k].w, 0)
@@ -75,7 +75,7 @@ export class World {
   private prey: Prey[] = []
   private parts: Part[] = []
   private floats: Float[] = []
-  private nextPred = 18
+  private nextPred = 5
   private mouth = 0
   private flash = 0
   private fleeT = 0
@@ -359,12 +359,19 @@ export class World {
       }
       const dx = this.shark.x - p.x, dy = this.shark.y - p.y, d = Math.hypot(dx, dy) || 1
       if (this.gI > 0.3 && d < R) {
-        const v = K.spd + 60 * this.gI, ta = Math.atan2(dy, dx), f = Math.min(1, dt * 2.2)
-        p.vx += (Math.cos(ta) * v - p.vx) * f
-        p.vy += (Math.sin(ta) * v - p.vy) * f
+        // Lured in, but wary: they circle just out of reach, so the shark has to
+        // lunge its mouth onto one rather than wait for it to swim in.
+        const ring = s * 0.8, v = K.spd + 40 * this.gI, ux = dx / d, uy = dy / d
+        const vr = Math.max(-v, Math.min(v, (d - ring) * 3)), vt = K.spd * 0.7 * (p.variant ? 1 : -1)
+        // and they dart away from an open mouth coming at them
+        const mx = p.x - mouth.x, my = p.y - mouth.y, md = Math.hypot(mx, my) || 1, near = s * 0.75
+        const dart = md < near ? K.spd * 2.2 * (1 - md / near) : 0
+        const f = Math.min(1, dt * 2.6)
+        p.vx += (ux * vr - uy * vt + (mx / md) * dart - p.vx) * f
+        p.vy += (uy * vr + ux * vt + (my / md) * dart - p.vy) * f
         p.lit = 1
-      } else if (this.gI < 0.3 && d < R * 0.55 && !resting) {
-        const away = Math.atan2(-dy, -dx), v = K.spd + 100 * (1 - d / (R * 0.55)) + 30, f = Math.min(1, dt * 3.5)
+      } else if (this.gI < 0.3 && d < R * 0.7 && !resting) {
+        const away = Math.atan2(-dy, -dx), v = K.spd + 130 * (1 - d / (R * 0.7)) + 40, f = Math.min(1, dt * 3.5)
         p.vx += (Math.cos(away) * v - p.vx) * f
         p.vy += (Math.sin(away) * v - p.vy) * f
         p.a = away
@@ -378,9 +385,9 @@ export class World {
       p.x += p.vx * dt
       p.y += p.vy * dt
       if (p.y > this.SH - 30) p.vy -= 40 * dt
-      // close to the mouth, or bumping the head: start the gulp
+      // only the mouth catches: it has to actually reach the snack
       const dm = Math.hypot(mouth.x - p.x, mouth.y - p.y)
-      if (!resting && (dm < s * 0.24 + K.r || d < s * 0.2 + K.r)) {
+      if (!resting && dm < s * 0.14 + K.r) {
         p.eat = 0
         p.from = { x: p.x, y: p.y }
       }
@@ -429,7 +436,7 @@ export class World {
             hooks.onToast(home ? 'Safe at home! +5' : 'Great dodging! +5', '#7dff9a')
           }
           this.pred = null
-          this.nextPred = rnd(18, 34)
+          this.nextPred = rnd(6, 12)
         }
       }
     }

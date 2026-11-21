@@ -213,3 +213,21 @@ describe('squid', () => {
     expect(tipX()).toBeLessThan(relaxed - 100)
   })
 })
+
+describe('harder snacks and more predators', () => {
+  it('lured snacks circle out of reach: a shark sitting still with its glow on catches almost nothing', () => {
+    const w = makeWorld(), h = hooks()
+    w.glowHeld = true
+    placeShark(w, W / 2, H * 0.3)
+    for (let i = 0; i < 4 * 60; i++) { w.shark.x = W / 2; w.shark.y = H * 0.3; w.update(1 / 60, true, false, h) }
+    expect(h.onEat.mock.calls.length).toBeLessThanOrEqual(1)
+  })
+
+  it('the first predator shows up within about 5 seconds', () => {
+    const w = makeWorld(), h = hooks()
+    let t = 0
+    while (!w.pred && t < 6) { w.update(1 / 30, true, false, h); t += 1 / 30 }
+    expect(w.pred).toBeTruthy()
+    expect(t).toBeLessThan(5.5)
+  })
+})

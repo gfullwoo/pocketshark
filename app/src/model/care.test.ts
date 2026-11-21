@@ -1,58 +1,74 @@
 import { describe, expect, it } from 'vitest'
-import { RULES, catchUp, checkIn, dodge, eat, mood, newShark, scare, tick } from './care'
+import { RULES, catchUp, checkIn, dodge, eat, migrate, mood, newShark, scare, tick } from './care'
 
 const T0 = new Date(2026, 10, 21, 9, 0).getTime()
 const HOUR = 3600_000
 
 describe('mood', () => {
-  it('is happy when fed and safe, peckish when hungry', () => {
+  it('follows health', () => {
     const s = newShark(T0)
-    s.fullness = 80; s.safety = 80
+    s.health = 80
     expect(mood(s)).toBe('happy')
-    s.fullness = 20
-    expect(mood(s)).toBe('peckish')
-    s.fullness = 50; s.safety = 20
-    expect(mood(s)).toBe('uneasy')
+    s.health = 50
+    expect(mood(s)).toBe('content')
+    s.health = 20
+    expect(mood(s)).toBe('hungry')
   })
 })
 
-describe('playing', () => {
-  it('glowing drains glow; home recharges it and restores safety', () => {
+describe('glow', () => {
+  it('drains 50% faster than before (15/s) and refills 75% slower', () => {
     const s = newShark(T0)
-    tick(s, 5, { atHome: false, glowing: true })
-    expect(s.glow).toBe(50)
-    const safetyOut = s.safety
-    tick(s, 5, { atHome: true, glowing: false })
+    tick(s, 2, { atHome: false, glowing: true })
     expect(s.glow).toBe(70)
-    expect(s.safety).toBeGreaterThan(safetyOut)
-  })
-
-  it('snacks fill the shark and pay Glow Points', () => {
-    const s = newShark(T0)
-    s.fullness = 50
-    expect(eat(s, 'shrimp')).toBe(3)
-    expect(s.fullness).toBe(58)
+    tick(s, 4, { atHome: true, glowing: false })
+    expect(s.glow).toBe(74) // 1/s at home (was 4)
+    tick(s, 4, { atHome: false, glowing: false })
+    expect(s.glow).toBeCloseTo(75.5) // 0.375/s out (was 1.5)
     s.glow = 10
-    expect(eat(s, 'plankton')).toBe(0)
-    expect(s.glow).toBe(40)
-    expect(s.stats.eaten).toBe(1)
+    eat(s, 'plankton')
+    expect(s.glow).toBe(17.5) // +7.5 (was +30)
+  })
+})
+
+describe('health', () => {
+  it('wears down over time, faster out swimming than at home', () => {
+    const a = newShark(T0), b = newShark(T0)
+    tick(a, 10, { atHome: false, glowing: false })
+    tick(b, 10, { atHome: true, glowing: false })
+    expect(a.health).toBeCloseTo(87.5)
+    expect(b.health).toBeCloseTo(89.2)
   })
 
-  it('a scare never kills: the shark rests, then wakes after recovering', () => {
+  it('snacks restore health and pay Glow Points', () => {
     const s = newShark(T0)
-    s.health = 5
+    s.health = 50
+    expect(eat(s, 'shrimp')).toBe(3)
+    expect(s.health).toBe(58)
+    expect(eat(s, 'gold')).toBe(10)
+    expect(s.health).toBe(78)
+    expect(s.stats.eaten).toBe(2)
+  })
+
+  it('a predator catch takes a big bite, but never kills: the shark rests, then wakes', () => {
+    const s = newShark(T0)
+    s.health = 15
     scare(s)
     expect(s.health).toBe(0)
     expect(mood(s)).toBe('resting')
-    for (let i = 0; i < 200; i++) tick(s, 1, { atHome: false, glowing: true })
+    let t = 0
+    while (s.resting && t < 500) { tick(s, 1, { atHome: false, glowing: true }); t++ }
     expect(s.resting).toBe(false)
     expect(s.health).toBeGreaterThanOrEqual(RULES.wakeAt)
+    expect(t).toBeLessThanOrEqual(101) // under two minutes of rest
   })
 
   it('pays 5 GP for each hour spent happy', () => {
     const s = newShark(T0)
-    s.fullness = 100; s.safety = 100
-    for (let i = 0; i < 3600; i++) tick(s, 1, { atHome: true, glowing: false })
+    for (let i = 0; i < 3600; i++) {
+      s.health = 100
+      tick(s, 1, { atHome: true, glowing: false })
+    }
     expect(s.gp).toBe(5)
   })
 
@@ -64,14 +80,12 @@ describe('playing', () => {
 })
 
 describe('away', () => {
-  it('gets hungrier but never below the floor, and comes home safe and recharged', () => {
+  it('health wears down but never below the floor, and glow refills', () => {
     const s = newShark(T0)
-    s.fullness = 40; s.glow = 0; s.safety = 10
+    s.health = 60; s.glow = 0
     const sum = catchUp(s, T0 + 20 * HOUR)
-    expect(s.fullness).toBe(RULES.offlineFloor.fullness)
+    expect(s.health).toBe(RULES.offline.healthFloor)
     expect(s.glow).toBe(100)
-    expect(s.safety).toBe(100)
-    expect(s.health).toBeGreaterThanOrEqual(RULES.offlineFloor.health)
     expect(sum.seconds).toBe(20 * 3600)
   })
 
@@ -80,17 +94,16 @@ describe('away', () => {
     expect(catchUp(s, T0 + 30 * 24 * HOUR).seconds).toBe(72 * 3600)
   })
 
-  it('does not push a meter that is already below the floor further down', () => {
+  it('does not push health that is already below the floor further down', () => {
     const s = newShark(T0)
-    s.fullness = 5; s.health = 10
+    s.health = 10
     catchUp(s, T0 + 10 * HOUR)
-    expect(s.fullness).toBe(5)
     expect(s.health).toBe(10)
   })
 
   it('wakes a resting shark while away', () => {
     const s = newShark(T0)
-    s.resting = true; s.health = 0; s.fullness = 80
+    s.resting = true; s.health = 0
     catchUp(s, T0 + 3 * HOUR)
     expect(s.resting).toBe(false)
   })
@@ -100,5 +113,18 @@ describe('away', () => {
     expect(checkIn(s, T0)).toBe(10)
     expect(checkIn(s, T0 + HOUR)).toBe(0)
     expect(checkIn(s, T0 + 24 * HOUR)).toBe(10)
+  })
+})
+
+describe('saved games from the earlier version', () => {
+  it('drops fullness and safety and keeps health, glow and points', () => {
+    const old = { v: 1, fullness: 30, glow: 55, safety: 80, health: 90, gp: 42, resting: false, lastSeen: T0, lastCheckIn: '2026-11-21', happySeconds: 10, stats: { eaten: 3, dodges: 1, scares: 0 } }
+    const s = migrate(old, T0)!
+    expect(s.v).toBe(2)
+    expect(s.gp).toBe(42)
+    expect(s.glow).toBe(55)
+    expect(s.health).toBe(40) // a hungry old shark starts lower, not at full health
+    expect('fullness' in s).toBe(false)
+    expect(migrate({ nope: true }, T0)).toBeNull()
   })
 })
