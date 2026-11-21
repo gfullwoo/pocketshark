@@ -17,9 +17,9 @@ type Sfx = keyof typeof SOURCES
 
 export const EAT_SOUND: Record<Snack, Sfx> = { krill: 'eat-krill', shrimp: 'eat-shrimp', gold: 'eat-gold', plankton: 'eat-glow' }
 
-/** Background music at 100% in the menu: quiet, so it sits under the sound effects. */
-const MUSIC_VOLUME = 0.3
-const SFX_VOLUME = 0.85
+// The menu's percentage is the playback volume (defaults: music 25%, effects 50%).
+const MUSIC_VOLUME = 1
+const SFX_VOLUME = 1
 /** Copies of each effect, so quick bites can overlap instead of cutting each other off. */
 const VOICES = 3
 export type { Sfx }

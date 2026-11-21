@@ -8,7 +8,7 @@
 // but touching ANY part of one is a catch: a scare that sends it darting home.
 import type { Snack } from '../model/care'
 import type { Ctx2D } from './ctx2d'
-import { drawPredator, drawWarning, hitCircles, PRED_INFO, sharkMouth, touches, type Circle, type Pred, type PredKind } from './predators'
+import { drawPredator, drawWarning, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
 
@@ -166,7 +166,7 @@ export class World {
       const s = Math.min(W, this.H) * 0.34 + 50
       const x = fromLeft ? -s * 0.6 : W + s * 0.6, y = rnd(SH * 0.1, SH * 0.55)
       const aimX = this.shark.x + rnd(-80, 80), aimY = this.shark.y + rnd(-60, 60)
-      return { ...base, s, x, y, ang: Math.atan2(aimY - y, aimX - x), warn: 2.2 }
+      return { ...base, s, x, y, ang: Math.atan2(aimY - y, aimX - x), warn: 2.2, squid: { state: 'swim', t: 0, e: 0, warned: false } }
     }
     const s = Math.min(W, this.H) * 0.22 + 30
     const x = fromLeft ? -s * 0.8 : W + s * 0.8
@@ -180,6 +180,58 @@ export class World {
   private warnAt(p: Pred) {
     const x = p.x < this.W / 2 ? 28 : this.W - 28
     return { x, y: Math.max(40, Math.min(this.SH - 24, p.y)) }
+  }
+
+  /** How far a squid's tentacles reach from its body when thrown, in px. */
+  squidReach(pr: Pred) { return squidTentacleLength(1) * (pr.s / 200) }
+
+  /**
+   * The squid swims in jet bursts (homing in on a glowing shark). When the
+   * pocket shark comes within tentacle reach, it stops, turns its arms toward
+   * the shark and pulls its tentacles back (a short warning), shoots them out,
+   * pulls them in, rests, and swims on.
+   */
+  private updateSquid(pr: Pred, dt: number, d: number, home: boolean, hooks: WorldHooks) {
+    const q = (pr.squid ??= { state: 'swim', t: 0, e: 0, warned: false })
+    const W = this.W
+    q.t -= dt
+    const turnToward = (want: number, rate: number) => {
+      let da = want - pr.ang
+      while (da > Math.PI) da -= TAU
+      while (da < -Math.PI) da += TAU
+      pr.ang += Math.max(-rate * dt, Math.min(rate * dt, da))
+    }
+    if (q.state === 'swim' || q.state === 'cool') {
+      if (!pr.done && this.gI > 0.35 && !home && d < pr.s * 1.6) {
+        if (!pr.hunt) hooks.onToast(PRED_INFO.squid.sees, '#ff8fb1')
+        pr.hunt = true
+      } else if (pr.hunt && (this.gI < 0.2 || home)) pr.hunt = false
+      if (pr.hunt && q.state === 'swim') turnToward(Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 1.4)
+      // jet propulsion: bursts of speed, drifting between them
+      const burst = 0.35 + 1.3 * Math.max(0, Math.sin(pr.ph))
+      const v = (W * 0.18 + 70) * burst * (pr.hunt ? 1.2 : 1) * (q.state === 'cool' ? 0.6 : 1)
+      pr.x += Math.cos(pr.ang) * v * dt
+      pr.y += Math.sin(pr.ang) * v * dt
+      q.e += (0 - q.e) * Math.min(1, dt * 5)
+      if (q.state === 'cool' && q.t <= 0) q.state = 'swim'
+      if (q.state === 'swim' && !pr.done && !home && q.t <= 0 && d < this.squidReach(pr) * 0.92) {
+        q.state = 'aim'
+        q.t = 0.45
+        if (!q.warned) { hooks.onToast('The squid is striking!', '#ff8fb1'); q.warned = true }
+      }
+    } else if (q.state === 'aim') {
+      // point the arms (the back of the squid) at the shark and wind up
+      turnToward(Math.atan2(pr.y - this.shark.y, pr.x - this.shark.x), 7)
+      q.e += (-0.3 - q.e) * Math.min(1, dt * 10)
+      if (q.t <= 0) { q.state = 'strike'; q.t = 0.2 }
+    } else if (q.state === 'strike') {
+      q.e = Math.min(1, q.e + dt / 0.18)
+      if (q.t <= 0) { q.state = 'retract'; q.t = 0.45 }
+    } else if (q.state === 'retract') {
+      q.e = Math.max(0, q.e - dt / 0.45)
+      if (q.t <= 0) { q.state = 'cool'; q.t = 1.8 }
+    }
+    pr.y = Math.max(-pr.s, Math.min(this.SH - pr.s * 0.12, pr.y))
   }
 
   /** Highest a crab can leap above its walking line: staying above this is safe. */
@@ -243,8 +295,8 @@ export class World {
     this.homing = true
     hooks.onScare()
     hooks.onToast(PRED_INFO[p.kind].caught, '#ff8fb1')
-    // the squid jets off after a grab
-    if (p.kind === 'squid') p.ang += Math.PI
+    // after a grab the squid reels its tentacles in and jets off, mantle-first (away from the shark)
+    if (p.kind === 'squid' && p.squid) { p.squid.state = 'retract'; p.squid.t = 0.45 }
   }
 
   /** `canGlow`: the care model has glow left. `resting`: shark is asleep at home. */
@@ -362,23 +414,7 @@ export class World {
           const m = sharkMouth(pr), dm = Math.hypot(m.x - this.shark.x, m.y - this.shark.y)
           pr.open += ((pr.hunt && dm < pr.s * 0.45 ? 1 : 0) - pr.open) * Math.min(1, dt * 8)
         } else if (pr.kind === 'squid') {
-          // jet propulsion: bursts of speed, drifting between them
-          if (!pr.done && this.gI > 0.35 && !home && d < pr.s * 1.6) {
-            if (!pr.hunt) hooks.onToast(PRED_INFO.squid.sees, '#ff8fb1')
-            pr.hunt = true
-          } else if (pr.hunt && (this.gI < 0.2 || home)) pr.hunt = false
-          if (pr.hunt) {
-            const want2 = Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x)
-            let da = want2 - pr.ang
-            while (da > Math.PI) da -= TAU
-            while (da < -Math.PI) da += TAU
-            pr.ang += Math.max(-1.4 * dt, Math.min(1.4 * dt, da))
-          }
-          const burst = 0.35 + 1.3 * Math.max(0, Math.sin(pr.ph))
-          const v = (W * 0.18 + 70) * burst * (pr.hunt ? 1.2 : 1)
-          pr.x += Math.cos(pr.ang) * v * dt
-          pr.y += Math.sin(pr.ang) * v * dt
-          pr.y = Math.max(-pr.s, Math.min(this.SH - pr.s * 0.12, pr.y))
+          this.updateSquid(pr, dt, d, home, hooks)
         } else {
           this.updateCrab(pr, dt, home, hooks)
         }

@@ -20,6 +20,12 @@ export interface Pred {
   done: boolean // already caught the shark once this pass
   ph: number // animation phase
   entered: boolean
+  /**
+   * Squid only: swimming; aiming (turns its arms toward the shark and pulls the
+   * long tentacles back); striking (shoots them out); retracting; resting.
+   * `e` is how far the tentacles are thrown: -0.3 wound up … 0 relaxed … 1 fully out.
+   */
+  squid?: { state: 'swim' | 'aim' | 'strike' | 'retract' | 'cool'; t: number; e: number; warned: boolean }
   /** Crab only: walking, crouching before a leap, in the air, or resting after landing. */
   crab?: { state: 'walk' | 'crouch' | 'air' | 'cool'; t: number; vx: number; vy: number; warned: boolean }
 }
@@ -28,7 +34,7 @@ export interface Circle { x: number; y: number; r: number }
 
 export const PRED_INFO: Record<PredKind, { coming: string; caught: string; sees: string }> = {
   shark: { coming: 'A big shark is coming! Glow off or swim home', caught: 'Chomp! The big shark nipped you. Swim home!', sees: 'It sees your glow!' },
-  squid: { coming: 'A squid is coming! Glow off or swim home', caught: 'The squid grabbed you! Wriggle home!', sees: 'The squid sees your glow!' },
+  squid: { coming: 'A squid is coming! Keep away from its tentacles', caught: 'The squid grabbed you! Wriggle home!', sees: 'The squid sees your glow!' },
   crab: { coming: 'A crab is scuttling by! Stay up high', caught: 'Pinch! The crab grabbed you. Swim home!', sees: 'The crab is about to jump!' },
 }
 
@@ -44,8 +50,21 @@ const SHARK_HITS: [number, number, number][] = [
 const SQUID_HITS: [number, number, number][] = [
   [92, 0, 12], [72, 0, 17], [50, 0, 19], [28, 0, 19], [6, 0, 17], // mantle and head
   [-18, -6, 11], [-18, 6, 11], [-38, -9, 9], [-38, 9, 9], [-58, -10, 7], [-58, 10, 7], // arms
-  [-80, -14, 6], [-80, 14, 6], [-98, -16, 6], [-98, 16, 6], // long feeding tentacles
 ]
+
+/** Length of the squid's two long feeding tentacles, in squid units: relaxed 100, fully thrown 240. */
+export const squidTentacleLength = (e: number) => 100 + 140 * Math.max(0, e) + 25 * Math.min(0, e)
+/** Where each tentacle tip sits sideways: they spread when relaxed and close together when thrown. */
+const tentacleSpread = (e: number) => 16 - 11 * Math.max(0, e)
+
+function squidTentacleHits(e: number): [number, number, number][] {
+  const L = squidTentacleLength(e), spread = tentacleSpread(e), out: [number, number, number][] = []
+  for (const side of [-1, 1]) {
+    for (let x = -70; x > -L; x -= 16) out.push([x, side * (4 + (spread - 4) * ((-x - 8) / (L - 8))), 6])
+    out.push([-L, side * spread, 10]) // the club at the tip
+  }
+  return out
+}
 const CRAB_HITS: [number, number, number][] = [
   [0, 0, 36], [-26, -4, 22], [26, -4, 22], // shell
   [-60, -30, 18], [60, -30, 18], [-44, -18, 12], [44, -18, 12], // claws and arms
@@ -60,7 +79,7 @@ export function hitCircles(p: Pred): Circle[] {
   }
   if (p.kind === 'squid') {
     const sc = p.s / 200, c = Math.cos(p.ang), sn = Math.sin(p.ang)
-    return SQUID_HITS.map(([x, y, r]) => ({ x: p.x + (x * c - y * sn) * sc, y: p.y + (x * sn + y * c) * sc, r: r * sc }))
+    return [...SQUID_HITS, ...squidTentacleHits(p.squid?.e ?? 0)].map(([x, y, r]) => ({ x: p.x + (x * c - y * sn) * sc, y: p.y + (x * sn + y * c) * sc, r: r * sc }))
   }
   const sc = p.s / 120
   return CRAB_HITS.map(([x, y, r]) => ({ x: p.x + x * sc, y: p.y + y * sc, r: r * sc }))
@@ -156,13 +175,24 @@ function drawSquid(ctx: Ctx2D, p: Pred, t: number) {
     ctx.quadraticCurveTo(-36, off * 1.6 + wave, -62 - (i % 3) * 4, off * 2.2 + wave * 1.4)
     ctx.stroke()
   }
+  // the two long feeding tentacles: wavy when relaxed, pulled back to wind up, shot straight out to strike
+  const e = p.squid?.e ?? 0
+  const L = squidTentacleLength(e), spread = tentacleSpread(e)
+  const straight = Math.max(0, Math.min(1, e * 1.5))
   for (const side of [-1, 1]) {
-    ctx.strokeStyle = dark; ctx.lineWidth = 3
+    ctx.strokeStyle = dark; ctx.lineWidth = 3 + straight
     ctx.beginPath(); ctx.moveTo(-8, side * 4)
-    ctx.quadraticCurveTo(-60, side * (12 + Math.sin(t * 3 + side) * 8), -100, side * 16)
+    const wobble = Math.sin(t * 3 + side) * 8 * (1 - straight)
+    ctx.quadraticCurveTo(-L * 0.6, side * (spread * 0.75 + wobble), -L, side * spread)
     ctx.stroke()
+    // clubs with suckers, bigger and open when striking
+    const cw = 7 + straight * 5, ch = 4 + straight * 3
     ctx.fillStyle = body
-    ctx.beginPath(); ctx.ellipse(-100, side * 16, 7, 4, side * 0.3, 0, TAU); ctx.fill()
+    ctx.beginPath(); ctx.ellipse(-L, side * spread, cw, ch, side * 0.3 * (1 - straight), 0, TAU); ctx.fill()
+    if (straight > 0.2) {
+      ctx.fillStyle = 'rgba(255,220,235,.7)'
+      for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.arc(-L - 4 + k * 4, side * spread, 1.3, 0, TAU); ctx.fill() }
+    }
   }
   // fins at the mantle tip
   ctx.fillStyle = dark

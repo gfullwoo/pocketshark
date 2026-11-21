@@ -1,5 +1,6 @@
 // Player settings (volume levels), saved on the device and shared by the game
-// and the story. Levels are 0–1, where 1 is the game's normal mix.
+// and the story. Levels are 0–1 and are the actual playback volume shown in
+// the menu as a percentage.
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useState } from 'react'
 
@@ -8,9 +9,10 @@ export interface Settings {
   sfx: number
 }
 
-const KEY = 'pocketshark:settings:v1'
+// v2: new defaults (music 25%, effects 50%); earlier saved levels are not carried over.
+const KEY = 'pocketshark:settings:v2'
 const LEGACY_MUTE_KEY = 'pocketshark:sound-muted:v1'
-const DEFAULTS: Settings = { music: 1, sfx: 1 }
+const DEFAULTS: Settings = { music: 0.25, sfx: 0.5 }
 
 let current: Settings = { ...DEFAULTS }
 let loaded: Promise<Settings> | null = null
@@ -42,7 +44,7 @@ export function getSettings(): Settings {
 }
 
 export function updateSettings(patch: Partial<Settings>) {
-  current = { music: clamp(patch.music ?? current.music, 1), sfx: clamp(patch.sfx ?? current.sfx, 1) }
+  current = { music: clamp(patch.music ?? current.music, DEFAULTS.music), sfx: clamp(patch.sfx ?? current.sfx, DEFAULTS.sfx) }
   listeners.forEach((l) => l(current))
   void AsyncStorage.setItem(KEY, JSON.stringify(current)).catch(() => {})
 }

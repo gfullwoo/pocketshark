@@ -10,6 +10,13 @@ import { colors } from '../theme'
 import { CAPTIONS, captionAt, STORY_SECONDS, Story } from './intro'
 import { narrate, prepareNarrator, stopNarration } from './narrator'
 
+/**
+ * The story is meant to be heard, so its music plays louder than the quiet
+ * in-game loop: three times the menu's Music level, capped at full volume
+ * (the 25% default plays the story at 75%). Music at 0 silences it.
+ */
+const storyMusicVolume = () => Math.min(1, getSettings().music * 3)
+
 const fontFamily = Platform.select({ ios: 'Helvetica', default: 'sans-serif' })
 const fonts = new Map<number, SkFont>()
 const makeFont = (size: number) => {
@@ -57,7 +64,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
   // Lower the music while the narrator speaks, so the words come through.
   const duck = (on: boolean) => {
-    try { music.volume = (on ? 0.4 : 1) * getSettings().music } catch { /* ignore */ }
+    try { music.volume = (on ? 0.4 : 1) * storyMusicVolume() } catch { /* ignore */ }
   }
   useEffect(() => () => stopNarration(), [])
 
@@ -96,7 +103,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
     let cue = CAPTIONS.findIndex((c) => c.t >= from - 0.3)
     if (cue < 0) cue = CAPTIONS.length
     try {
-      music.volume = getSettings().music
+      music.volume = storyMusicVolume()
       music.play()
       if (from > 0 || run > 0) void music.seekTo(from)
     } catch { /* play silently */ }

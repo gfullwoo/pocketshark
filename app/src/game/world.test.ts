@@ -164,3 +164,52 @@ describe('crab', () => {
     expect(['walk', 'cool']).toContain(crab.crab!.state)
   })
 })
+
+describe('squid', () => {
+  function squidAt(w: World, x: number, y: number, ang = 0) {
+    const p = w.spawnPredator('squid')
+    p.warn = 0; p.entered = true; p.x = x; p.y = y; p.ang = ang
+    w.pred = p
+    return p
+  }
+
+  it('turns, winds up, and grabs with its tentacles from well beyond its body', () => {
+    const w = makeWorld(), h = hooks()
+    const sq = squidAt(w, 120, 300, 0) // swimming right; arms point left
+    const far = w.squidReach(sq) * 0.8 // much further than the body or arms reach
+    const sharkX = 120 + far
+    const states = new Set<string>()
+    for (let i = 0; i < 120 && !h.onScare.mock.calls.length; i++) {
+      placeShark(w, sharkX, 300) // the shark hovers in place
+      w.update(1 / 60, true, false, h)
+      states.add(sq.squid!.state)
+    }
+    expect(states.has('aim')).toBe(true)
+    expect(states.has('strike')).toBe(true)
+    expect(h.onScare).toHaveBeenCalledTimes(1)
+    expect(h.onToast).toHaveBeenCalledWith('The squid is striking!', expect.any(String))
+  })
+
+  it('misses a shark that darts out of reach during the wind-up', () => {
+    const w = makeWorld(), h = hooks()
+    const sq = squidAt(w, 120, 300, 0)
+    placeShark(w, 120 + w.squidReach(sq) * 0.8, 300)
+    for (let i = 0; i < 30 && sq.squid!.state !== 'aim'; i++) w.update(1 / 60, true, false, h)
+    expect(sq.squid!.state).toBe('aim')
+    for (let i = 0; i < 90; i++) {
+      placeShark(w, Math.min(370, sq.x + w.squidReach(sq) * 1.5), 120) // well out of reach
+      w.update(1 / 60, true, false, h)
+    }
+    expect(h.onScare).not.toHaveBeenCalled()
+  })
+
+  it('a relaxed tentacle is shorter than a thrown one', () => {
+    const w = makeWorld()
+    const sq = squidAt(w, 200, 300, 0)
+    const tipX = () => Math.min(...hitCircles(sq).map((c) => c.x - c.r))
+    sq.squid!.e = 0
+    const relaxed = tipX()
+    sq.squid!.e = 1
+    expect(tipX()).toBeLessThan(relaxed - 100)
+  })
+})
