@@ -2,6 +2,7 @@ import { Canvas, matchFont, Picture, type SkFont, type SkPicture } from '@shopif
 import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { EAT_SOUND, useReefAudio } from '../game/audio'
 import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
@@ -39,6 +40,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const insets = useSafeAreaInsets()
   const [picture, setPicture] = useState<SkPicture | null>(null)
   const world = useRef(new World())
+  const audio = useReefAudio()
+  const playSound = audio.play
   // Web preview only: expose the world so a moment can be set up for checking.
   if (Platform.OS === 'web') (globalThis as { __reef?: World }).__reef = world.current
   const care = useRef<CareState | null>(null)
@@ -85,10 +88,12 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         const s = care.current
         if (!s) return
         eat(s, kind)
+        playSound(EAT_SOUND[kind])
         void Haptics.impactAsync(kind === 'gold' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light)
       },
       onScare: () => {
         if (care.current) scare(care.current)
+        playSound('hurt')
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
       },
       onDodge: () => {
@@ -124,7 +129,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       cancelAnimationFrame(raf)
       if (care.current) void saveCare(care.current)
     }
-  }, [showToast])
+  }, [showToast, playSound])
 
   useEffect(() => {
     if (!toast) return
@@ -204,6 +209,18 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
           accessibilityLabel="Swim home to the cave"
         >
           <Text style={styles.homeText}>{hud.atHome ? 'At home' : 'Home'}</Text>
+        </Pressable>
+      )}
+
+      {hud && (
+        <Pressable
+          onPress={() => audio.setMuted(!audio.muted)}
+          style={({ pressed }) => [styles.homeBtn, styles.soundBtn, { right: controls.homeButtonPosition.right, bottom: controls.homeButtonPosition.bottom + 58 }, pressed && { opacity: 0.7 }]}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: !audio.muted }}
+          accessibilityLabel="Music and sound effects"
+        >
+          <Text style={[styles.homeText, styles.soundText, audio.muted && { color: colors.muted }]}>{audio.muted ? 'Sound off' : 'Sound on'}</Text>
         </Pressable>
       )}
 
@@ -316,6 +333,8 @@ const styles = StyleSheet.create({
   homeBtn: { position: 'absolute', minHeight: 48, paddingHorizontal: 20, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   homeBtnOn: { borderColor: colors.cyan },
   homeText: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  soundBtn: { minHeight: 44, paddingHorizontal: 16 },
+  soundText: { fontSize: 14 },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,8,16,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, padding: 22, borderRadius: 24, backgroundColor: colors.panelSolid, borderWidth: 1, borderColor: colors.line },
   cardTitle: { color: colors.text, fontSize: 26, fontWeight: '700', marginBottom: 10 },
