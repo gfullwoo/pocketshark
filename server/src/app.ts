@@ -19,6 +19,12 @@ export function createApp(opts: AppOptions) {
 
   if (opts.corsOrigins?.length) app.use('/api/*', cors({ origin: opts.corsOrigins }))
 
+  // API responses must never be cached by Firebase Hosting's CDN
+  app.use('/api/*', async (c, next) => {
+    await next()
+    c.header('Cache-Control', 'no-store')
+  })
+
   app.get('/api/health', (c) => c.json({ ok: true }))
 
   app.post('/api/checkout', async (c) => {

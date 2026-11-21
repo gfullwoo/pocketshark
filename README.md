@@ -5,7 +5,8 @@ Storefront and checkout for **[mypocketshark.com](https://mypocketshark.com)**: 
 ```
 web/       storefront: Vite + React 19 + TypeScript (glow theme, product gallery, cart)
 server/    API: Hono + Stripe Checkout + zod; also serves web/dist in production
-docs/      product spec for manufacturers
+docs/      product spec, GCP deploy guide
+infra/     one-time GCP bootstrap script
 ```
 
 `server/src/catalog.ts` is the single source of truth for sizes and prices. The storefront imports it for display, and the API uses it to build Stripe line items, so the browser never sets a price.
@@ -29,15 +30,16 @@ Test card: `4242 4242 4242 4242`, any future date, any CVC.
 
 ## Deploy
 
-One process serves both the site and the API:
+Production runs on GCP: Firebase Hosting serves the storefront, and Cloud Run runs the API. Every push to `main` deploys through GitHub Actions. Setup steps are in **[docs/deploy-gcp.md](docs/deploy-gcp.md)**.
+
+To self-host, one process serves both the site and the API:
 
 ```bash
 npm run build
-STRIPE_SECRET_KEY=sk_live_... STRIPE_WEBHOOK_SECRET=whsec_... \
-  SITE_URL=https://mypocketshark.com PORT=8080 npm start
+STRIPE_SECRET_KEY=sk_live_... SITE_URL=https://mypocketshark.com PORT=8080 npm start
 ```
 
-This works under PM2 behind a Cloudflare Tunnel. Docker also works: `docker build -t pocketshark . && docker run -p 8080:8080 -e STRIPE_SECRET_KEY=... -e SITE_URL=... pocketshark`.
+The root `Dockerfile` builds the same all-in-one image.
 
 | Env | Purpose |
 |---|---|
