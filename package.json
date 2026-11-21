@@ -1,0 +1,14 @@
+{
+  "name": "pocketshark",
+  "private": true,
+  "description": "mypocketshark.com: storefront (web/) and checkout API (server/)",
+  "scripts": {
+    "install:all": "npm --prefix web ci && npm --prefix server ci",
+    "dev:web": "npm --prefix web run dev",
+    "dev:api": "npm --prefix server run dev",
+    "build": "npm --prefix web run build && npm --prefix server run build",
+    "lint": "npm --prefix web run lint",
+    "test": "npm --prefix server test",
+    "start": "STATIC_DIR=../web/dist npm --prefix server start"
+  }
+}
