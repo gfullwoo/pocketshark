@@ -42,9 +42,12 @@ DEPLOYER="$DEPLOY_SA@$PROJECT_ID.iam.gserviceaccount.com"
 echo "==> Secrets (you'll be prompted for values that don't exist yet)"
 for secret in stripe-secret-key stripe-webhook-secret; do
   if ! gcloud secrets describe "$secret" >/dev/null 2>&1; then
-    read -r -s -p "  Value for $secret (Enter to set later): " val; echo
+    read -r -s -p "  Value for $secret (Enter = placeholder 'unset', replace later): " val; echo
     gcloud secrets create "$secret" --replication-policy automatic
-    [ -n "$val" ] && printf '%s' "$val" | gcloud secrets versions add "$secret" --data-file=-
+    printf '%s' "${val:-unset}" | gcloud secrets versions add "$secret" --data-file=-
+  fi
+  if [ -z "$(gcloud secrets versions list "$secret" --limit 1 --format='value(name)')" ]; then
+    printf 'unset' | gcloud secrets versions add "$secret" --data-file=-
   fi
   gcloud secrets add-iam-policy-binding "$secret" --member "serviceAccount:$RUNTIME" \
     --role roles/secretmanager.secretAccessor --condition=None >/dev/null

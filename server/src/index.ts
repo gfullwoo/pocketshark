@@ -12,7 +12,8 @@ if (!key) {
 const app = createApp({
   stripe: new Stripe(key),
   siteUrl: (process.env.SITE_URL || 'http://localhost:5173').replace(/\/$/, ''),
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  // 'unset' is the bootstrap placeholder until a Stripe webhook exists
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_WEBHOOK_SECRET !== 'unset' ? process.env.STRIPE_WEBHOOK_SECRET : undefined,
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   staticDir: process.env.STATIC_DIR,
 })
