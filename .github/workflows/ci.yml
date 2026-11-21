@@ -5,6 +5,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# GCP deploy target (identifiers, not secrets). Created by infra/bootstrap.sh.
+env:
+  GCP_PROJECT_ID: pocketshark
+  GCP_REGION: us-central1
+  GCP_WIF_PROVIDER: projects/166341647898/locations/global/workloadIdentityPools/github/providers/pocketshark-repo
+  GCP_DEPLOYER_SA: pocketshark-deployer@pocketshark.iam.gserviceaccount.com
+  GCP_RUNTIME_SA: pocketshark-run@pocketshark.iam.gserviceaccount.com
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -32,17 +40,14 @@ jobs:
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_DISABLED != 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
       contents: read
       id-token: write
     env:
-      PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      REGION: ${{ vars.GCP_REGION }}
       SERVICE: pocketshark-api
-      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/pocketshark/api:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -53,31 +58,34 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOYER_SA }}
           create_credentials_file: true
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Build and push API image
         run: |
+          PROJECT="$GCP_PROJECT_ID"; REGION="$GCP_REGION"
+          IMAGE="$REGION-docker.pkg.dev/$PROJECT/pocketshark/api:$GITHUB_SHA"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
           gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
           docker build -t "$IMAGE" server
           docker push "$IMAGE"
 
       - name: Deploy API to Cloud Run
         run: |
-          gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" --image "$IMAGE" \
-            --service-account "${{ vars.GCP_RUNTIME_SA }}" \
+          gcloud run deploy "$SERVICE" --project "$GCP_PROJECT_ID" --region "$GCP_REGION" --image "$IMAGE" \
+            --service-account "$GCP_RUNTIME_SA" \
             --allow-unauthenticated --port 8080 --cpu 1 --memory 512Mi \
             --min-instances 0 --max-instances 3 --concurrency 80 \
             --set-env-vars "SITE_URL=https://mypocketshark.com" \
             --set-secrets "STRIPE_SECRET_KEY=stripe-secret-key:latest,STRIPE_WEBHOOK_SECRET=stripe-webhook-secret:latest"
 
       - name: Deploy storefront to Firebase Hosting
-        run: npx --yes firebase-tools@14 deploy --only hosting --project "$PROJECT" --non-interactive
+        run: npx --yes firebase-tools@14 deploy --only hosting --project "$GCP_PROJECT_ID" --non-interactive
 
       - name: Smoke test
         run: |
-          URL="https://$PROJECT.web.app"
+          URL="https://$GCP_PROJECT_ID.web.app"
           curl -fsS "$URL/api/health"
           curl -fsS -o /dev/null "$URL/"

@@ -32,7 +32,7 @@ The script does the following:
 - Sets up Workload Identity Federation, locked to `gfullwoo/pocketshark` on `main`.
 - Adds Firebase to the project.
 
-At the end it prints `gh variable set ...` commands. Run them, or add the same values under GitHub → Settings → Secrets and variables → Actions → Variables. `DEPLOY_ENABLED=true` turns on the deploy job.
+The deploy target is set in `.github/workflows/ci.yml` (`env:` block). Set repo variable `DEPLOY_DISABLED=true` to pause deploys.
 
 ## 2. Deploy
 
