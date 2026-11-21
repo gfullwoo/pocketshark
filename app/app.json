@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "PocketShark",
+    "slug": "pocketshark",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mypocketshark.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#050b16",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.mypocketshark.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "pocketshark",
+    "backgroundColor": "#050b16",
+    "plugins": [
+      "expo-audio",
+      "expo-asset"
+    ]
+  }
+}
