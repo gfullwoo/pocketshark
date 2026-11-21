@@ -333,6 +333,10 @@ html.lights-out .card--glow { box-shadow: 0 0 40px rgba(125, 255, 154, 0.18); }
 .gg-track i { display: block; height: 100%; width: 100%; border-radius: 99px; background: var(--glow); box-shadow: 0 0 12px var(--glow); }
 .gg-track i.is-low { background: #ff8fb1; box-shadow: 0 0 12px #ff8fb1; }
 .gg-toast { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px; background: rgba(6, 22, 40, 0.85); border: 1px solid var(--line-strong); font: 600 1rem var(--display); white-space: nowrap; pointer-events: none; animation: gg-pop 0.2s ease-out; }
+.gg-glowbtn { position: absolute; right: 16px; bottom: 16px; width: 92px; height: 92px; border-radius: 50%; border: 2px solid var(--line-strong); background: rgba(6, 22, 40, 0.8); color: var(--glow); font: 600 1.05rem var(--display); cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: background 0.15s, box-shadow 0.15s, color 0.15s; }
+.gg-glowbtn.is-on { background: var(--glow); color: #04130a; border-color: transparent; box-shadow: 0 0 0 4px rgba(125, 255, 154, 0.25), 0 0 34px rgba(125, 255, 154, 0.75); }
+.gg-glowbtn:focus-visible { outline: 3px solid var(--glow); outline-offset: 3px; }
+@media (pointer: fine) { .gg-glowbtn { width: 72px; height: 72px; font-size: 0.9rem; opacity: 0.85; } }
 @keyframes gg-pop { from { opacity: 0; transform: translate(-50%, -6px); } }
 .gg-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: radial-gradient(closest-side, rgba(3, 11, 22, 0.35), rgba(3, 11, 22, 0.78)); }
 .gg-card { width: min(430px, 100%); padding: 24px 22px; border-radius: 24px; text-align: center; background: rgba(6, 22, 40, 0.82); border: 1px solid var(--line-strong); backdrop-filter: blur(6px); box-shadow: 0 0 40px rgba(125, 255, 154, 0.12); }

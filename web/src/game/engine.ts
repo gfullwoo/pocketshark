@@ -10,12 +10,16 @@ export interface EngineResult {
 export interface EngineHooks {
   onHud(h: { score: number; time: number; glow: number }): void
   onToast(msg: string, color?: string): void
+  /** The glow button's on/off state changed inside the engine (ran out of glow, round ended). */
+  onGlowButton?(on: boolean): void
   onEnd(r: EngineResult): void
 }
 
 export interface Engine {
   start(): void
   setSound(on: boolean): void
+  /** On-screen Glow button (touch screens): turn the glow on or off. */
+  setGlowButton(on: boolean): boolean
   destroy(): void
 }
 
@@ -23,7 +27,7 @@ type Kind = 'krill' | 'shrimp' | 'gold' | 'plankton'
 interface Prey { k: Kind; x: number; y: number; a: number; vx: number; vy: number; ph: number; lit: number; dead?: boolean }
 interface Part { x: number; y: number; vx: number; vy: number; l: number; c: string }
 interface Float { x: number; y: number; txt: string; c: string; l: number }
-interface Pred { dir: 1 | -1; x: number; y: number; s: number; warn: number; hunt: boolean; escaped: boolean; minD: number; open: number }
+interface Pred { spd: number; dir: 1 | -1; x: number; y: number; s: number; warn: number; hunt: boolean; escaped: boolean; minD: number; open: number }
 
 const KINDS: Record<Kind, { pts: number; r: number; col: string; spd: number; w: number }> = {
   krill: { pts: 1, r: 5, col: '#ff8fb1', spd: 28, w: 6 },
@@ -64,7 +68,7 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
   let score = 0, eaten = 0, timeLeft = GAME_SECONDS, glow = 100, gI = 0, flash = 0, mouth = 0, t = 0
   let emptyWarned = false, caughtT = 0, sharkScale = 1
   const shark = { x: W / 2, y: H / 2, dir: 1, tilt: 0 }
-  const ptr = { x: W / 2, y: H / 2, down: false, key: false }
+  const ptr = { x: W / 2, y: H / 2, down: false, key: false, btn: false }
   const keys: Record<string, boolean> = {}
   let prey: Prey[] = [], parts: Part[] = [], floats: Float[] = [], pred: Pred | null = null, nextPred = 10
   const snow = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), r: rnd(0.5, 1.8), s: rnd(0.006, 0.02), a: rnd(0.15, 0.45) }))
@@ -131,10 +135,19 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     if (p.k === 'gold') hooks.onToast('Golden snack! +10', '#ffd166')
   }
 
+  /** 0 at the start, 1 at 120+ points: the big shark gets faster and visits more often. */
+  const danger = () => Math.min(1, score / 120)
+  const predGap = () => rnd(8, 13) * (1 - 0.6 * danger())
+
+  function releaseButton() {
+    if (ptr.btn) { ptr.btn = false; hooks.onGlowButton?.(false) }
+  }
+
   function caught() {
     state = 'caught'
     caughtT = 0
     ptr.down = ptr.key = false
+    releaseButton()
     flash = 1
     hooks.onToast('Gulp!', '#ff8fb1')
     blip(110, 0.5, 'square', 0.05)
@@ -144,6 +157,7 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
   function finish(wasCaught: boolean) {
     state = 'over'
     ptr.down = ptr.key = false
+    releaseButton()
     pred = null
     sharkScale = 1
     blip(wasCaught ? 200 : 520, 0.15)
@@ -176,12 +190,13 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     if (Math.abs(vx) > 10) shark.dir = vx > 0 ? 1 : -1
     shark.tilt += (Math.max(-0.5, Math.min(0.5, vy / 420)) * shark.dir - shark.tilt) * Math.min(1, dt * 5)
 
-    const wantGlow = playing ? ptr.down || ptr.key : state === 'caught' ? false : Math.sin(t * 0.8) > 0.2
+    const wantGlow = playing ? ptr.down || ptr.key || ptr.btn : state === 'caught' ? false : Math.sin(t * 0.8) > 0.2
     const glowing = wantGlow && glow > 1
     if (playing) glow = glowing ? Math.max(0, glow - 16 * dt) : Math.min(100, glow + 9 * dt)
     if (playing && wantGlow && glow <= 1 && !emptyWarned) {
-      hooks.onToast('Out of glow! Let go to recharge', '#ff8fb1')
+      hooks.onToast(ptr.btn ? 'Out of glow! Resting to recharge' : 'Out of glow! Let go to recharge', '#ff8fb1')
       emptyWarned = true
+      releaseButton()
     }
     if (!wantGlow) emptyWarned = false
     gI += ((glowing ? 1 : 0) - gI) * Math.min(1, dt * 6)
@@ -197,6 +212,13 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
         p.vx += (Math.cos(ta) * sp - p.vx) * f
         p.vy += (Math.sin(ta) * sp - p.vy) * f
         p.lit = 1
+      } else if (playing && gI < 0.3 && d < R * 0.6) {
+        // Without the glow, snacks see the shark coming and dart away.
+        const away = Math.atan2(-dy, -dx), sp = K.spd + 120 * (1 - d / (R * 0.6)) + 40
+        p.vx += (Math.cos(away) * sp - p.vx) * Math.min(1, dt * 3.5)
+        p.vy += (Math.sin(away) * sp - p.vy) * Math.min(1, dt * 3.5)
+        p.a = away
+        p.lit = Math.max(0, p.lit - dt)
       } else {
         p.a += rnd(-1, 1) * dt * 1.5
         p.vx += (Math.cos(p.a) * K.spd - p.vx) * Math.min(1, dt)
@@ -218,11 +240,12 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
       nextPred -= dt
       if (!pred && nextPred <= 0) {
         const fromLeft = Math.random() < 0.5, ps = Math.min(W, H) * 0.6 + 100
+        const lvl = danger()
         pred = {
-          dir: fromLeft ? 1 : -1, y: Math.max(ps * 0.2, Math.min(H - ps * 0.2, shark.y + rnd(-60, 60))),
-          x: fromLeft ? -ps * 0.6 : W + ps * 0.6, s: ps, warn: 2, hunt: false, escaped: false, minD: 1e9, open: 0,
+          spd: 1 + 0.9 * lvl, dir: fromLeft ? 1 : -1, y: Math.max(ps * 0.2, Math.min(H - ps * 0.2, shark.y + rnd(-60, 60))),
+          x: fromLeft ? -ps * 0.6 : W + ps * 0.6, s: ps, warn: 2 - 0.6 * lvl, hunt: false, escaped: false, minD: 1e9, open: 0,
         }
-        hooks.onToast('A big shark is coming! Let go to hide', '#ffd166')
+        hooks.onToast('A big shark is coming! Glow off to hide', '#ffd166')
         blip(180, 0.3, 'sawtooth', 0.035)
       }
       if (pred) {
@@ -233,7 +256,7 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
           pred.minD = Math.min(pred.minD, d)
           if (!pred.hunt && ahead && gI > 0.35 && d < pred.s * 0.8) {
             pred.hunt = true
-            hooks.onToast('It sees your glow! Let go!', '#ff8fb1')
+            hooks.onToast('It sees your glow! Glow off!', '#ff8fb1')
             blip(150, 0.35, 'square', 0.04)
           } else if (pred.hunt && (gI < 0.2 || !ahead)) {
             pred.hunt = false
@@ -243,8 +266,8 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
             }
           }
           const sc = pred.s / 230
-          if (pred.hunt) pred.y += (shark.y - 10 * sc - pred.y) * Math.min(1, dt * 2.6)
-          pred.x += pred.dir * (W * 0.33 + 120) * (pred.hunt ? 1.5 : 1) * dt
+          if (pred.hunt) pred.y += (shark.y - 10 * sc - pred.y) * Math.min(1, dt * 2.6 * pred.spd)
+          pred.x += pred.dir * (W * 0.33 + 120) * pred.spd * (pred.hunt ? 1.5 : 1) * dt
           const m = mouthPos(pred), dm = Math.hypot(m.x - shark.x, m.y - shark.y)
           pred.open += ((pred.hunt && dm < pred.s * 0.45 ? 1 : 0) - pred.open) * Math.min(1, dt * 8)
           if (pred.hunt && dm < size() * 0.55) caught()
@@ -255,7 +278,7 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
               blip(660, 0.2, 'triangle', 0.06)
             }
             pred = null
-            nextPred = rnd(8, 13)
+            nextPred = predGap()
           }
         }
       }
@@ -466,14 +489,16 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     ptr.x = Math.max(0, Math.min(W, e.clientX - r.left))
     ptr.y = Math.max(0, Math.min(H, e.clientY - r.top + (e.pointerType === 'touch' ? -50 : 0)))
   }
+  const onUi = (e: Event) => (e.target as Element | null)?.closest?.('[data-gg-ui]') != null
   const onDown = (e: PointerEvent) => {
-    if (state !== 'play') return
+    if (state !== 'play' || onUi(e)) return
     e.preventDefault()
     setPtr(e)
-    ptr.down = true
+    // Mouse: hold to glow. Touch/pen: dragging only swims; the Glow button lights up.
+    ptr.down = e.pointerType === 'mouse'
     try { tank.setPointerCapture(e.pointerId) } catch { /* ignore */ }
   }
-  const onMove = (e: PointerEvent) => { if (state === 'play') setPtr(e) }
+  const onMove = (e: PointerEvent) => { if (state === 'play' && !onUi(e)) setPtr(e) }
   const onUp = () => { ptr.down = false }
   const onCtx = (e: Event) => e.preventDefault()
   const onKeyDown = (e: KeyboardEvent) => {
@@ -485,7 +510,7 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     if (e.code === 'Space') ptr.key = false
     keys[e.code] = false
   }
-  const onVis = () => { ptr.down = ptr.key = false }
+  const onVis = () => { ptr.down = ptr.key = false; releaseButton() }
   tank.addEventListener('pointerdown', onDown)
   tank.addEventListener('pointermove', onMove)
   tank.addEventListener('pointerup', onUp)
@@ -515,12 +540,16 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
       } catch { ac = null }
       score = 0; eaten = 0; timeLeft = GAME_SECONDS; glow = 100; pred = null; nextPred = rnd(7, 10); parts = []; floats = []
       prey = Array.from({ length: target() }, () => spawn(false)).filter((p) => Math.hypot(p.x - W / 2, p.y - H / 2) > 120)
-      shark.x = W / 2; shark.y = H / 2; ptr.x = W / 2; ptr.y = H / 2; ptr.down = ptr.key = false
+      shark.x = W / 2; shark.y = H / 2; ptr.x = W / 2; ptr.y = H / 2; ptr.down = ptr.key = ptr.btn = false
       sharkScale = 1; caughtT = 0
       state = 'play'
       tank.focus({ preventScroll: true })
     },
     setSound(on) { soundOn = on },
+    setGlowButton(on) {
+      ptr.btn = on && state === 'play' && glow > 1
+      return ptr.btn
+    },
     destroy() {
       cancelAnimationFrame(raf)
       ro.disconnect()
