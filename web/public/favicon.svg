@@ -1,1 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#050b16"/><g transform="translate(0 15)"><path d="M4,20 C3,10 11,5 21,5 C32,5 42,9 50,15 L60,9 C60,13 58,16 56,18 C58,20 60,23 60,27 L50,22 C42,27 30,30 20,29 C10,28 5,26 4,20 Z" fill="#7dff9a"/><circle cx="13" cy="15" r="2.4" fill="#050b16"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#0d2a3a"/>
+      <stop offset="0.6" stop-color="#071526"/>
+      <stop offset="1" stop-color="#03080f"/>
+    </radialGradient>
+    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g filter="url(#glow)"><g transform="translate(256 262) rotate(-22) scale(3.8) translate(-60 -28)">
+    <path d="M52,13 C53,4 63,2 66,8 C67,11 65,13 62,15 Z" fill="#7dff9a"/>
+    <path d="M77,18 C78,11 85,11 87,15 L85,21 Z" fill="#7dff9a"/>
+    <path d="M8,27 C8,15 22,9 38,10 C60,11 80,16 96,22 L111,9 C114,17 111,24 106,27 C110,31 113,37 111,43 L96,32 C80,38 58,42 38,42 C20,42 8,39 8,27 Z" fill="#7dff9a"/>
+    <path d="M36,38 C38,47 46,51 51,49 C49,44 47,40 44,37 Z" fill="#5fe683"/>
+  </g></g>
+  <g transform="translate(256 262) rotate(-22) scale(3.8) translate(-60 -28)">
+    <path d="M40,26 Q44,22 47,27" fill="none" stroke="#e6fff0" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="22" cy="22" r="3.6" fill="#04101c"/>
+    <circle cx="23.2" cy="20.8" r="1.1" fill="#ffffff"/>
+  </g>
+</svg>
