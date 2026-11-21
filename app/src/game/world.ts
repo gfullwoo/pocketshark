@@ -657,7 +657,7 @@ export class World {
   }
 
   // ---------- drawing ----------
-  draw(ctx: Ctx2D, scenery: () => void, resting: boolean, backdrop?: () => void) {
+  draw(ctx: Ctx2D, scenery: () => void, resting: boolean) {
     const { W, H, t } = this
     const g = ctx.createLinearGradient(0, 0, 0, H)
     g.addColorStop(0, '#0b2742'); g.addColorStop(0.5, '#06172b'); g.addColorStop(1, '#020812')
@@ -677,8 +677,6 @@ export class World {
     // everything in the reef is drawn through the camera (zoomed in at home)
     ctx.save()
     this.applyCamera(ctx)
-    // distant rocks, a sunken ship and kelp forests, far behind everything
-    backdrop?.()
     // a predator far off in the background swims behind the reef
     if (this.pred && this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     // seabed below the scene (under the on-screen controls)
