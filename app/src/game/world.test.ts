@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { hitCircles, touches, type Pred, type PredKind } from './predators'
 import { World } from './world'
+import { subLamp } from './submarine'
 
 const W = 390, H = 844
 
@@ -288,5 +289,81 @@ describe('getting hurt', () => {
     w.setStick(1, 0)
     for (let i = 0; i < 60; i++) w.update(1 / 60, true, false, h)
     expect(w.atHome()).toBe(false)
+  })
+})
+
+describe('research submarine', () => {
+  const capHooks = () => ({ ...hooks(), onCaptured: vi.fn() })
+  function withSub(w: World) {
+    w.pred = null
+    w.nextSub = 0
+    w.update(1 / 60, true, false, capHooks())
+    expect(w.sub).toBeTruthy()
+    expect(w.danger).toBe(true)
+    return w.sub!
+  }
+
+  it('catches a shark that stays in the spotlight, pulls it up, then ends the game', () => {
+    const w = makeWorld(), h = capHooks()
+    const sb = withSub(w)
+    sb.x = W / 2
+    sb.beam = Math.PI / 2 // straight down
+    const lamp = subLamp(sb)
+    let t = 0
+    while (!w.capture && t < 2) { placeShark(w, lamp.x, lamp.y + 150); sb.x = W / 2; w.update(1 / 60, true, false, h); t += 1 / 60 }
+    expect(w.capture).toBeTruthy()
+    expect(t).toBeLessThan(0.8)
+    for (let i = 0; i < 120; i++) w.update(1 / 60, true, false, h)
+    expect(h.onCaptured).toHaveBeenCalledTimes(1)
+    w.release()
+    expect(w.capture).toBeNull()
+    expect(w.sub).toBeNull()
+    expect(w.atHome()).toBe(true)
+  })
+
+  it('a quick pass through the edge of the beam is not a catch', () => {
+    const w = makeWorld(), h = capHooks()
+    const sb = withSub(w)
+    sb.x = W / 2; sb.beam = Math.PI / 2
+    const lamp = subLamp(sb)
+    for (let i = 0; i < 12; i++) { placeShark(w, lamp.x, lamp.y + 150); sb.x = W / 2; w.update(1 / 60, true, false, h) }
+    for (let i = 0; i < 60; i++) { placeShark(w, 20, 20); w.update(1 / 60, true, false, h) }
+    expect(w.capture).toBeNull()
+  })
+
+  it('the cave is always safe from the spotlight', () => {
+    const w = makeWorld(), h = capHooks()
+    const sb = withSub(w)
+    const home = w.home()
+    for (let i = 0; i < 180; i++) {
+      placeShark(w, home.x, home.y)
+      const l = subLamp(sb)
+      sb.beam = Math.atan2(home.y - l.y, home.x - l.x)
+      w.update(1 / 60, true, false, h)
+    }
+    expect(w.capture).toBeNull()
+  })
+
+  it('a glowing shark draws the beam toward it', () => {
+    const w = makeWorld(), h = capHooks()
+    const sb = withSub(w)
+    sb.x = W / 2; sb.beam = Math.PI / 2 - 0.7
+    w.glowHeld = true
+    const target = { x: W * 0.75, y: w.SH * 0.6 }
+    for (let i = 0; i < 40; i++) { placeShark(w, target.x, target.y); sb.x = W / 2; w.update(1 / 60, true, false, h) }
+    expect(sb.hunt).toBe(true)
+    const l = subLamp(sb)
+    const want = Math.atan2(target.y - l.y, target.x - l.x)
+    expect(Math.abs(sb.beam - want)).toBeLessThan(0.7)
+  })
+
+  it('crosses the screen and leaves, and no new predators come while it is here', () => {
+    const w = makeWorld(), h = capHooks()
+    withSub(w)
+    let t = 0
+    while (w.sub && t < 30) { placeShark(w, w.home().x, w.home().y); w.update(1 / 30, true, false, h); t += 1 / 30; if (w.sub) expect(w.pred).toBeNull() }
+    expect(w.sub).toBeNull()
+    expect(w.danger).toBe(false)
+    expect(t).toBeGreaterThan(6)
   })
 })

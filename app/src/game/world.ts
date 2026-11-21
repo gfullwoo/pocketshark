@@ -8,6 +8,7 @@
 // but touching ANY part of one is a catch: a scare that sends it darting home.
 import type { Snack } from '../model/care'
 import type { Ctx2D } from './ctx2d'
+import { drawBeam, drawSonar, drawSub, inBeam, SPOT_SECONDS, subLamp, type Sub } from './submarine'
 import { drawPredator, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
@@ -17,6 +18,8 @@ export interface WorldHooks {
   onScare(): void
   onDodge(): void
   onToast(msg: string, color?: string): void
+  /** The research submarine caught the pocket shark: the game is over (the screen offers Continue). */
+  onCaptured?(): void
 }
 
 type Kind = Snack
@@ -79,6 +82,13 @@ export class World {
   private mouth = 0
   private flash = 0
   private fleeT = 0
+  /** The research submarine, while it's crossing the reef. */
+  sub: Sub | null = null
+  nextSub = rnd(25, 40)
+  /** Being pulled up into the submarine (seconds since the catch), then caught for good. */
+  capture: { t: number; x: number; y: number; done: boolean } | null = null
+  /** The sub is hunting: the music turns scary. */
+  get danger() { return !!this.sub || !!this.capture }
   /** Seconds left of being sad and scared, hiding in the cave after a catch. */
   private scaredT = 0
   /** Hurt: running home after a catch, then sad and scared in the cave for a bit. */
@@ -359,10 +369,95 @@ export class World {
     if (p.kind === 'squid' && p.squid) { p.squid.state = 'retract'; p.squid.t = 0.45 }
   }
 
+  /**
+   * The research submarine cruises across near the top, sweeping its spotlight
+   * down through the water. A glowing shark draws the beam toward it. Staying
+   * in the beam for a moment means getting caught; the cave is always safe.
+   */
+  private updateSub(dt: number, home: boolean, resting: boolean) {
+    const { W, SH } = this
+    if (!this.sub) {
+      this.nextSub -= dt
+      if (this.nextSub > 0 || resting || this.pred) return
+      const s = Math.min(W, this.H) * 0.42 + 20, dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1
+      this.sub = { x: dir > 0 ? -s * 0.7 : W + s * 0.7, y: SH * 0.3, dir, s, beam: Math.PI / 2, spot: 0, hunt: false, ph: 0, stop: 0 }
+      return
+    }
+    const sb = this.sub
+    sb.ph += dt
+    sb.y = SH * 0.3 + Math.sin(sb.ph * 0.8) * 6 // below the top bar
+    const lamp = subLamp(sb), sz = this.size()
+    // the beam: a slow search sweep, or it follows a glowing shark (slowly, so you can slip out)
+    const toShark = Math.atan2(this.shark.y - lamp.y, this.shark.x - lamp.x)
+    sb.hunt = !home && this.gI > 0.35 && Math.hypot(this.shark.x - lamp.x, this.shark.y - lamp.y) < SH * 0.95 && toShark > 0.15 && toShark < Math.PI - 0.15
+    const want = sb.hunt ? toShark : Math.PI / 2 + Math.sin(sb.ph * 0.75) * 0.75
+    let da = want - sb.beam
+    while (da > Math.PI) da -= Math.PI * 2
+    while (da < -Math.PI) da += Math.PI * 2
+    const rate = sb.hunt ? 0.85 : 1.2
+    sb.beam += Math.max(-rate * dt, Math.min(rate * dt, da))
+    sb.x += sb.dir * (W * 0.08 + 22) * (sb.hunt ? 0.55 : 1) * dt
+    // caught in the light?
+    const lit = !home && !resting && inBeam(sb, SH, this.shark.x, this.shark.y, sz * 0.3)
+    sb.spot = Math.max(0, Math.min(1, sb.spot + (lit ? dt / SPOT_SECONDS : -dt / 0.6)))
+    if (sb.spot >= 1) {
+      this.capture = { t: 0, x: this.shark.x, y: this.shark.y, done: false }
+      this.glowOn = false
+      this.homing = false
+      this.fleeT = 0
+      this.scaredT = 0
+      return
+    }
+    if (sb.x < -sb.s * 0.8 || sb.x > W + sb.s * 0.8) {
+      this.sub = null
+      this.nextSub = rnd(60, 100)
+    }
+  }
+
+  /** Pulled up the beam into the sub, shrinking, then the game is over. */
+  private updateCapture(dt: number, hooks: WorldHooks) {
+    const c = this.capture!, sb = this.sub
+    c.t += dt
+    this.gI += (0 - this.gI) * Math.min(1, dt * 6)
+    if (sb) {
+      sb.ph += dt
+      const l = subLamp(sb), k = Math.min(1, c.t / 1.3), e = k * k * (3 - 2 * k)
+      this.shark.x = c.x + (l.x - c.x) * e
+      this.shark.y = c.y + (l.y - c.y) * e
+    }
+    this.shark.tilt = Math.sin(c.t * 18) * 0.25 // wriggling
+    for (const q of this.parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.l -= dt }
+    this.parts = this.parts.filter((q) => q.l > 0)
+    if (c.t >= 1.4 && !c.done) {
+      c.done = true
+      hooks.onCaptured?.()
+    }
+  }
+
+  /**
+   * After the game-over screen: the pocket shark wriggles free (Continue) or a
+   * new one starts (Start over). Either way it's back in its cave and the sub is gone.
+   */
+  release() {
+    this.capture = null
+    this.sub = null
+    this.nextSub = rnd(60, 100)
+    this.pred = null
+    this.nextPred = rnd(6, 12)
+    const h = this.home()
+    this.shark.x = h.x
+    this.shark.y = h.y
+    this.shark.tilt = 0
+    this.vel = { x: 0, y: 0 }
+    this.fleeT = 0
+    this.scaredT = 2.5
+  }
+
   /** `canGlow`: the care model has glow left. `resting`: shark is asleep at home. */
   update(dt: number, canGlow: boolean, resting: boolean, hooks: WorldHooks) {
     const { W, H } = this
     this.t += dt
+    if (this.capture) { this.updateCapture(dt, hooks); return }
     if (this.fleeT > 0) this.fleeT -= dt
     if (this.scaredT > 0) this.scaredT -= dt
     const auto = resting || this.scared || this.homing
@@ -459,9 +554,13 @@ export class World {
     this.prey = this.prey.filter((p) => !p.dead)
     while (this.prey.length < this.preyTarget()) this.prey.push(this.spawn(true))
 
-    // ---- predators ----
+    // ---- research submarine ----
+    this.updateSub(dt, home, resting)
+    if (this.capture) return
+
+    // ---- predators (none new while the sub is around) ----
     this.nextPred -= dt
-    if (!this.pred && this.nextPred <= 0 && !resting) {
+    if (!this.pred && this.nextPred <= 0 && !resting && !this.sub) {
       const kind = pickPredator()
       this.pred = kind !== 'crab' && Math.random() < 0.5 ? this.spawnFromBackground(kind) : this.spawnPredator(kind)
     }
@@ -549,6 +648,7 @@ export class World {
       ctx.fillStyle = h
       ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill()
     }
+    if (this.sub) { drawSonar(ctx, this.sub); drawBeam(ctx, this.sub, this.SH) }
     // a crab walks on the seabed, behind the swimmers
     if (this.pred && this.pred.kind === 'crab') drawPredator(ctx, this.pred, t)
     for (const p of this.prey) if (p.eat === undefined) this.drawPrey(ctx, p)
@@ -561,6 +661,7 @@ export class World {
     if (this.pred) {
       if (this.pred.kind !== 'crab' && !this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     }
+    if (this.sub) drawSub(ctx, this.sub, t)
     for (const q of this.parts) {
       ctx.globalAlpha = Math.max(0, q.l / 0.6); ctx.fillStyle = q.c
       ctx.beginPath(); ctx.arc(q.x, q.y, 2, 0, TAU); ctx.fill()
@@ -616,8 +717,9 @@ export class World {
   private drawShark(ctx: Ctx2D, resting: boolean) {
     const sc = this.size() / 80, { t, gI, mouth } = this
     ctx.save()
-    ctx.translate(this.shark.x, this.shark.y); ctx.rotate(this.shark.tilt); ctx.scale(this.shark.dir * sc, sc)
-    const scared = this.scared && !resting
+    const shrink = this.capture ? 1 - 0.65 * Math.min(1, this.capture.t / 1.3) : 1 // pulled up into the sub
+    ctx.translate(this.shark.x, this.shark.y); ctx.rotate(this.shark.tilt); ctx.scale(this.shark.dir * sc * shrink, sc * shrink)
+    const scared = (this.scared || !!this.capture) && !resting
     ctx.translate(scared ? Math.sin(t * 55) * 0.9 : 0, Math.sin(t * (resting ? 1 : 3)) * 2) // trembles when scared
     const wag = Math.sin(t * (resting ? 2 : 8)) * 3
     ctx.fillStyle = '#6f7b88'

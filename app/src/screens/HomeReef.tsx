@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
 import { paintScenery } from '../game/scenery'
 import { World } from '../game/world'
-import { catchUp, checkIn, dodge, eat, mood, need, scare, tick, type AwaySummary, type CareState, type Mood } from '../model/care'
+import { captured, catchUp, checkIn, continueAfterCapture, dodge, eat, mood, need, newShark, scare, tick, type AwaySummary, type CareState, type Mood } from '../model/care'
 import { loadCare, saveCare } from '../model/storage'
 import { colors } from '../theme'
 
@@ -31,7 +31,7 @@ interface Hud {
   mood: Mood | 'scared'; need: string; glowOn: boolean; atHome: boolean
 }
 
-type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number }
+type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number } | { kind: 'caught' }
 
 const MOOD_LABEL: Record<Mood | 'scared', string> = {
   scared: 'Scared', happy: 'Happy', content: 'Content', hungry: 'Hungry', resting: 'Resting',
@@ -43,6 +43,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const world = useRef(new World())
   const audio = useReefAudio()
   const playSound = audio.play
+  const setDanger = audio.setDanger
   // Web preview only: expose the world so a moment can be set up for checking.
   if (Platform.OS === 'web') (globalThis as { __reef?: World }).__reef = world.current
   const care = useRef<CareState | null>(null)
@@ -53,7 +54,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const [card, setCard] = useState<Card | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const paused = useRef(false)
-  paused.current = menuOpen
+  const isPaused = menuOpen || card?.kind === 'caught'
+  useEffect(() => { paused.current = isPaused }, [isPaused])
 
   const showToast = useCallback((m: string, c?: string) => setToast({ m, c, id: Date.now() }), [])
 
@@ -105,6 +107,12 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       },
       onToast: showToast,
+      onCaptured: () => {
+        if (care.current) { captured(care.current); void saveCare(care.current) }
+        playSound('captured')
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+        setCard({ kind: 'caught' })
+      },
     }
     const frame = () => {
       const now = Date.now()
@@ -121,6 +129,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         setPicture(record(W, H, makeFont, (ctx) => w.draw(ctx, () => ctx.drawPicture(bg), s.resting)))
         if (now - hudAt > 200) {
           hudAt = now
+          setDanger(w.danger && !paused.current)
           setHud({
             glow: s.glow, health: s.health, gp: s.gp,
             mood: w.scared && !s.resting ? 'scared' : mood(s),
@@ -137,7 +146,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       cancelAnimationFrame(raf)
       if (care.current) void saveCare(care.current)
     }
-  }, [showToast, playSound])
+  }, [showToast, playSound, setDanger])
 
   useEffect(() => {
     if (!toast) return
@@ -212,16 +221,6 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         </View>
       )}
 
-      {hud && (
-        <Pressable
-          onPress={() => world.current.goHome()}
-          style={({ pressed }) => [styles.homeBtn, controls.homeButtonPosition, (hud.atHome || pressed) && styles.homeBtnOn]}
-          accessibilityRole="button"
-          accessibilityLabel="Swim home to the cave"
-        >
-          <Text style={styles.homeText}>{hud.atHome ? 'At home' : 'Home'}</Text>
-        </Pressable>
-      )}
 
 
       {menuOpen && (
@@ -232,7 +231,26 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         />
       )}
 
-      {card && <CareCard card={card} onClose={() => setCard(null)} onWatchStory={onWatchStory} />}
+      {card?.kind === 'caught' ? (
+        <CaughtCard
+          onContinue={() => {
+            // Monetization hook: a paid or rewarded-ad continue can be required here later.
+            const s = care.current
+            if (s) { continueAfterCapture(s); void saveCare(s) }
+            world.current.release()
+            setCard(null)
+          }}
+          onStartOver={() => {
+            const s = newShark(Date.now())
+            care.current = s
+            void saveCare(s)
+            world.current.release()
+            setCard({ kind: 'intro' })
+          }}
+        />
+      ) : card ? (
+        <CareCard card={card} onClose={() => setCard(null)} onWatchStory={onWatchStory} />
+      ) : null}
     </View>
   )
 }
@@ -264,7 +282,34 @@ function fmtAway(sec: number) {
   return h >= 1 ? `${h} hr${h > 1 ? 's' : ''}${m ? ` ${m} min` : ''}` : `${m} min`
 }
 
-function CareCard({ card, onClose, onWatchStory }: { card: Card; onClose: () => void; onWatchStory?: () => void }) {
+/** Game over: the research submarine caught the shark in its spotlight. */
+function CaughtCard({ onContinue, onStartOver }: { onContinue: () => void; onStartOver: () => void }) {
+  const [confirm, setConfirm] = useState(false)
+  return (
+    <View style={styles.scrim}>
+      <View style={[styles.card, styles.caughtCard]}>
+        <Text style={[styles.cardTitle, styles.caughtTitle]}>Caught!</Text>
+        <Text style={styles.cardText}>The research submarine spotted your pocket shark in its light and scooped it up to study.</Text>
+        <Text style={styles.cardText}>Keep out of the spotlight next time, and hide in your cave while the sub goes by.</Text>
+        <Pressable onPress={onContinue} style={({ pressed }) => [styles.cardBtn, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+          <Text style={styles.cardBtnText}>Continue</Text>
+        </Pressable>
+        <Text style={[styles.cardText, styles.caughtNote]}>Your shark wriggles free and swims home. You keep your Glow Points.</Text>
+        <Pressable
+          onPress={() => (confirm ? onStartOver() : setConfirm(true))}
+          style={styles.storyLink}
+          accessibilityRole="button"
+        >
+          <Text style={[styles.storyLinkText, confirm && { color: colors.pink }]}>
+            {confirm ? 'Tap again to start over (Glow Points reset to 0)' : 'Start over with a new shark'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
+function CareCard({ card, onClose, onWatchStory }: { card: Exclude<Card, { kind: 'caught' }>; onClose: () => void; onWatchStory?: () => void }) {
   return (
     <View style={styles.scrim}>
       <View style={styles.card}>
@@ -273,7 +318,8 @@ function CareCard({ card, onClose, onWatchStory }: { card: Card; onClose: () => 
             <Text style={styles.cardTitle}>Meet your pocket shark</Text>
             <Text style={styles.cardText}>It’s one of the rarest sharks in the world, and it’s counting on you.</Text>
             <Text style={styles.cardText}>Use the joystick on the left to swim. Hold <Text style={styles.em}>Glow</Text> on the right to light up the pockets behind its fins, and snacks swim to the light.</Text>
-            <Text style={styles.cardText}>Glowing also catches a predator’s eye. Big sharks, squid and crabs are dangerous: don’t touch them! Watch the water, even far off in the distance. When one comes, let go of Glow or swim <Text style={styles.em}>Home</Text> to the cave.</Text>
+            <Text style={styles.cardText}>Glowing also catches a predator’s eye. Big sharks, squid and crabs are dangerous: don’t touch them! Watch the water, even far off in the distance. When one comes, let go of Glow and swim back to your cave.</Text>
+            <Text style={styles.cardText}>Watch out for the research submarine and its spotlight. If it catches you in the light, the game is over! Hide in the cave until it’s gone.</Text>
             <Text style={styles.cardText}>Keep it fed and safe, and it stays happy and earns Glow Points, even while you’re away.</Text>
           </>
         ) : (
@@ -336,9 +382,9 @@ const styles = StyleSheet.create({
   need: { color: colors.text, fontSize: 15, marginTop: 8, marginLeft: 4, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
   toastWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   toast: { color: colors.text, fontSize: 16, fontWeight: '600', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999, overflow: 'hidden', backgroundColor: 'rgba(6,22,40,0.88)', borderWidth: 1, borderColor: colors.line },
-  homeBtn: { position: 'absolute', minHeight: 48, paddingHorizontal: 20, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
-  homeBtnOn: { borderColor: colors.cyan },
-  homeText: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  caughtCard: { borderColor: colors.pink },
+  caughtTitle: { color: colors.pink },
+  caughtNote: { fontSize: 14, color: colors.muted, marginTop: 8, textAlign: 'center' },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,8,16,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   card: { width: '100%', maxWidth: 420, padding: 22, borderRadius: 24, backgroundColor: colors.panelSolid, borderWidth: 1, borderColor: colors.line },
   cardTitle: { color: colors.text, fontSize: 26, fontWeight: '700', marginBottom: 10 },

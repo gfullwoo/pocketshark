@@ -4,6 +4,8 @@ Render the in-game audio for the home reef: a quiet looping background tune and
 short sound effects. Original, in the same chiptune style as the story music.
 
   assets/music/reef-loop.m4a   gentle loop (F major, 84 BPM, 16 bars, ~46 s)
+  assets/music/danger-loop.m4a submarine hunting: drone, heartbeat, sonar (D minor, 96 BPM, 8 bars, 20 s)
+  assets/sfx/captured.wav      caught in the spotlight
   assets/sfx/eat-krill*.wav    small prey: chomp, gulp and bubbles (3 pitches)
   assets/sfx/eat-shrimp.wav    crunchy pop
   assets/sfx/eat-gold.wav      sparkly chime
@@ -242,20 +244,92 @@ def reef_loop():
     return out / max(1e-9, np.max(np.abs(out))) * 0.8
 
 
+# ------------------------------------------------------------- danger loop
+def danger_loop():
+    """Played while the research submarine is hunting: low drone, heartbeat, sonar pings, creeping bass."""
+    bpm, bars = 96, 8
+    beat = 60 / bpm
+    length = bars * 4 * beat
+    tr = Track(length + 3)
+    D = 38  # D2
+    for b in range(bars):
+        t0 = b * 4 * beat
+        # dark drone: D with a rubbing E-flat above it, swelling each bar
+        for m, v in [(D - 12, 0.22), (D, 0.14), (D + 1, 0.06), (D + 6, 0.04)]:
+            w = lowpass(tone('pulse', hz(m), beat * 4, duty=0.5, extra=0.6), 0.05)
+            tr.add(t0, w * adsr(len(w), 0.4, 0.4, 0.8, 0.5, beat * 3.9), v)
+        # heartbeat: lub-dub on beats 1 and 3
+        for k in (0, 2):
+            for j, (off, vol) in enumerate([(0, 0.9), (0.22, 0.6)]):
+                n = int(SR * 0.25)
+                t = np.arange(n) / SR
+                thump = np.sin(2 * np.pi * np.cumsum(70 * np.exp(-t * 14) + 38) / SR) * np.exp(-t * 14)
+                tr.add(t0 + (k + off) * beat, thump, 0.55 * vol)
+        # creeping chromatic bass line
+        line = [D, D + 1, D, D - 1] if b % 2 == 0 else [D, D + 3, D + 2, D + 1]
+        for k, m in enumerate(line):
+            w = tone('tri', hz(m + 12), beat * 0.8, extra=0.2)
+            tr.add(t0 + (k + 0.5) * beat, w * adsr(len(w), 0.01, 0.1, 0.6, 0.15, beat * 0.8), 0.16)
+        # high tremolo cluster, tense and quiet
+        for m in (D + 36, D + 37):
+            w = lowpass(tone('pulse', hz(m), beat * 4, duty=0.3, extra=0.4), 0.15)
+            n = len(w)
+            trem = 0.5 + 0.5 * np.sin(2 * np.pi * 11 * np.arange(n) / SR)
+            tr.add(t0, w * trem * adsr(n, 0.8, 0.2, 0.9, 0.3, beat * 3.9), 0.025)
+        # the sub's sonar ping every two bars
+        if b % 2 == 0:
+            pg = tone('sine', hz(D + 45), 0.05, extra=1.4)
+            env = decay(len(pg), 3.5)
+            ping = pg * env
+            tr.add(t0 + 2.5 * beat, ping, 0.22)
+            tr.add(t0 + 2.5 * beat + 0.38, ping, 0.07)  # echo
+    x = tr.buf
+    n = int(SR * length)
+    out = x[:n].copy()
+    tail = x[n:]
+    out[: len(tail)] += tail
+    out = np.tanh(out * 1.4) / np.tanh(1.4)
+    fade = int(SR * 0.025)
+    out[:fade] *= np.linspace(0, 1, fade)
+    out[-fade:] *= np.linspace(1, 0, fade)
+    return out / max(1e-9, np.max(np.abs(out))) * 0.8
+
+
+def sfx_captured():
+    """Caught in the spotlight: an alarm stab, a whoosh up into the sub, a low clang."""
+    tr = Track(1.6)
+    for m in (50, 53, 56, 59):  # diminished stab
+        w = lowpass(tone('pulse', hz(m), 0.5, hz(m - 3), duty=0.5, extra=0.2), 0.2)
+        tr.add(0.0, w * adsr(len(w), 0.005, 0.2, 0.6, 0.2, 0.5), 0.3)
+    n = int(SR * 0.7)
+    t = np.arange(n) / SR
+    wh = noise(n) * np.sin(np.pi * t / 0.7) ** 2
+    tr.add(0.25, lowpass(wh, 0.08 + 0.0), 0.8)  # whoosh
+    up = tone('sine', hz(55), 0.6, hz(79), extra=0.1)
+    tr.add(0.3, up * adsr(len(up), 0.05, 0.2, 0.6, 0.1, 0.6), 0.35)
+    cl = tone('bell', hz(40), 0.6, extra=0.4)
+    tr.add(0.95, cl * decay(len(cl), 4), 0.6)  # hatch clang
+    return finish(tr.buf)
+
+
+def write_m4a(dest, x):
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        w = os.path.join(tmp, 'loop.wav')
+        write_wav(w, x)
+        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', w, '-c:a', 'aac', '-b:a', '80k', dest], check=True)
+    print('wrote', os.path.normpath(dest))
+
+
 def main():
     sfx = {'eat-krill': sfx_bite(0), 'eat-krill-2': sfx_bite(2), 'eat-krill-3': sfx_bite(-2), 'eat-shrimp': sfx_shrimp(), 'eat-gold': sfx_gold(), 'eat-glow': sfx_glow(), 'hurt': sfx_hurt()}
     for name, x in sfx.items():
         p = os.path.join(ASSETS, 'sfx', f'{name}.wav')
         write_wav(p, x)
         print('wrote', os.path.normpath(p))
-    loop = reef_loop()
-    dest = os.path.join(ASSETS, 'music', 'reef-loop.m4a')
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        w = os.path.join(tmp, 'loop.wav')
-        write_wav(w, loop)
-        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', w, '-c:a', 'aac', '-b:a', '80k', dest], check=True)
-    print('wrote', os.path.normpath(dest))
+    write_wav(os.path.join(ASSETS, 'sfx', 'captured.wav'), sfx_captured())
+    write_m4a(os.path.join(ASSETS, 'music', 'reef-loop.m4a'), reef_loop())
+    write_m4a(os.path.join(ASSETS, 'music', 'danger-loop.m4a'), danger_loop())
 
 
 if __name__ == '__main__':

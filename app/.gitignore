@@ -42,3 +42,4 @@ yarn-error.*
 
 # Skia web build (copied from node_modules by `npm run web:assets`)
 public/canvaskit.wasm
+__pycache__/

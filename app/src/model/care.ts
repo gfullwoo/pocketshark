@@ -20,7 +20,7 @@ export interface CareState {
   lastSeen: number // epoch ms, when the state was last brought up to date
   lastCheckIn: string // local YYYY-MM-DD of the last daily check-in bonus
   happySeconds: number // time in the happy zone not yet paid out as GP
-  stats: { eaten: number; dodges: number; scares: number }
+  stats: { eaten: number; dodges: number; scares: number; captures?: number; continues?: number }
 }
 
 export interface Ctx {
@@ -146,6 +146,21 @@ export function scare(s: CareState) {
   s.health = clamp(s.health - RULES.scareHealth)
   s.stats.scares++
   if (s.health <= 0) s.resting = true
+}
+
+/** Caught in the research submarine's spotlight: game over (see `continueAfterCapture`). */
+export function captured(s: CareState) {
+  s.stats.captures = (s.stats.captures ?? 0) + 1
+}
+
+/**
+ * Continue after a capture: the shark wriggles free and swims home, keeping its
+ * Glow Points. Free for now; this is where a paid or rewarded continue can go later.
+ */
+export function continueAfterCapture(s: CareState) {
+  s.health = Math.max(s.health, 30)
+  s.resting = false
+  s.stats.continues = (s.stats.continues ?? 0) + 1
 }
 
 /** Got past a predator without being touched: a small reward. */

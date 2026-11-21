@@ -14,6 +14,7 @@ const SOURCES = {
   'eat-gold': require('../../assets/sfx/eat-gold.wav'),
   'eat-glow': require('../../assets/sfx/eat-glow.wav'),
   hurt: require('../../assets/sfx/hurt.wav'),
+  captured: require('../../assets/sfx/captured.wav'),
 } as const
 type Sfx = keyof typeof SOURCES
 
@@ -34,6 +35,10 @@ export type { Sfx }
 
 export function useReefAudio() {
   const music = useRef<AudioPlayer | null>(null)
+  const danger = useRef<AudioPlayer | null>(null)
+  /** 0 = the calm reef tune, 1 = the scary submarine music; moves gradually for a crossfade. */
+  const mix = useRef(0)
+  const dangerOn = useRef(false)
   const pools = useRef(new Map<Sfx, { players: AudioPlayer[]; next: number }>())
   const active = useRef(true) // app in the foreground
 
@@ -43,6 +48,9 @@ export function useReefAudio() {
       const m = createAudioPlayer(require('../../assets/music/reef-loop.m4a'))
       m.loop = true
       music.current = m
+      const d = createAudioPlayer(require('../../assets/music/danger-loop.m4a'))
+      d.loop = true
+      danger.current = d
       for (const name of Object.keys(SOURCES) as Sfx[]) {
         const players = Array.from({ length: VOICES }, () => createAudioPlayer(SOURCES[name]))
         pools.current.set(name, { players, next: 0 })
@@ -54,11 +62,17 @@ export function useReefAudio() {
     // follow the menu's volume levels, live
     const apply = (s: Settings) => {
       try {
-        const m = music.current
-        if (m) {
-          m.volume = MUSIC_VOLUME * s.music
-          if (s.music <= 0 || !active.current) m.pause()
-          else if (!m.playing) m.play()
+        const k = mix.current
+        const tracks: [AudioPlayer | null, number][] = [
+          [music.current, MUSIC_VOLUME * s.music * (1 - k)],
+          // the scary tune plays a bit louder than the calm one, so it's noticed
+          [danger.current, Math.min(1, MUSIC_VOLUME * s.music * 1.8) * k],
+        ]
+        for (const [p, v] of tracks) {
+          if (!p) continue
+          p.volume = v
+          if (v <= 0.001 || !active.current) { if (p.playing) p.pause() }
+          else if (!p.playing) p.play()
         }
         for (const { players } of pools.current.values()) players.forEach((p) => { p.volume = SFX_VOLUME * s.sfx })
       } catch { /* ignore */ }
@@ -76,12 +90,38 @@ export function useReefAudio() {
       sub.remove()
       try {
         music.current?.remove()
+        danger.current?.remove()
         for (const { players } of pools.current.values()) players.forEach((p) => p.remove())
       } catch { /* already released */ }
       music.current = null
+      danger.current = null
       pools.current.clear()
     }
   }, [])
+
+  // crossfade toward the scary music while the submarine is around (about a second each way)
+  useEffect(() => {
+    const id = setInterval(() => {
+      const target = dangerOn.current ? 1 : 0
+      if (mix.current === target) return
+      const was = mix.current
+      mix.current = target > was ? Math.min(1, was + 0.12) : Math.max(0, was - 0.08)
+      // start the scary tune from the top each time the sub shows up
+      if (was === 0 && danger.current) void danger.current.seekTo(0).catch(() => {})
+      const s = getSettings()
+      try {
+        const m = music.current, d = danger.current
+        if (m) { m.volume = MUSIC_VOLUME * s.music * (1 - mix.current); if (m.volume > 0.001 && active.current && !m.playing) m.play() }
+        if (d) {
+          d.volume = Math.min(1, MUSIC_VOLUME * s.music * 1.8) * mix.current
+          if (d.volume > 0.001 && active.current) { if (!d.playing) d.play() } else if (d.playing) d.pause()
+        }
+      } catch { /* ignore */ }
+    }, 100)
+    return () => clearInterval(id)
+  }, [])
+
+  const setDanger = useCallback((on: boolean) => { dangerOn.current = on }, [])
 
   const play = useCallback((name: Sfx) => {
     if (getSettings().sfx <= 0) return
@@ -95,5 +135,5 @@ export function useReefAudio() {
     } catch { /* ignore a sound that can't play */ }
   }, [])
 
-  return { play }
+  return { play, setDanger }
 }

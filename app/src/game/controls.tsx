@@ -101,9 +101,8 @@ export function useControls({ insets, onStick, onGlow }: {
     </View>
   )
 
-  const homeButtonPosition = { right: insets.right + MARGIN, bottom: insets.bottom + MARGIN + GLOW_R * 2 + 14 }
 
-  return { touchProps, render, homeButtonPosition }
+  return { touchProps, render }
 }
 
 const styles = StyleSheet.create({
