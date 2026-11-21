@@ -7,7 +7,7 @@ import { GameMenu } from '../ui/GameMenu'
 import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
-import { paintScenery } from '../game/scenery'
+import { paintBackdrop, paintScenery } from '../game/scenery'
 import { World } from '../game/world'
 import { captured, catchUp, checkIn, continueAfterCapture, dodge, eat, mood, need, newShark, scare, tick, type AwaySummary, type CareState, type Mood } from '../model/care'
 import { loadCare, saveCare } from '../model/storage'
@@ -48,6 +48,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   if (Platform.OS === 'web') (globalThis as { __reef?: World }).__reef = world.current
   const care = useRef<CareState | null>(null)
   const scenery = useRef<SkPicture | null>(null)
+  const backdrop = useRef<SkPicture | null>(null)
   const size = useRef({ W: 0, H: 0 })
   const [hud, setHud] = useState<Hud | null>(null)
   const [toast, setToast] = useState<{ m: string; c?: string; id: number } | null>(null)
@@ -125,8 +126,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
           tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3, moving: w.effort })
         }
         s.lastSeen = now
-        const bg = scenery.current
-        setPicture(record(W, H, makeFont, (ctx) => w.draw(ctx, () => ctx.drawPicture(bg), s.resting)))
+        const bg = scenery.current, far = backdrop.current
+        setPicture(record(W, H, makeFont, (ctx) => w.draw(ctx, () => ctx.drawPicture(bg), s.resting, far ? () => ctx.drawPicture(far) : undefined)))
         if (now - hudAt > 200) {
           hudAt = now
           setDanger(w.danger && !paused.current)
@@ -162,6 +163,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
     const w = world.current
     w.resize(W, H, CONTROLS_HEIGHT + insets.bottom)
     scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH))
+    backdrop.current = record(W, w.SH, makeFont, (ctx) => paintBackdrop(ctx, W, w.SH))
   }
 
   const openMenu = () => {
