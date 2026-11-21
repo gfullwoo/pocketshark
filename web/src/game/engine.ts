@@ -1,5 +1,6 @@
 // Glow & Gulp: canvas engine. Framework-free; the Play view owns the UI around it.
 import { GAME_SECONDS } from '../../../server/src/game/rules'
+import { drawKelp, paintScenery } from './scenery'
 
 export interface EngineResult {
   score: number
@@ -51,6 +52,7 @@ function pickKind(): Kind {
 export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: EngineHooks): Engine {
   const ctx = cv.getContext('2d')!
   let W = 1, H = 1
+  const scenery = document.createElement('canvas')
   const resize = () => {
     const d = Math.min(2, window.devicePixelRatio || 1)
     W = tank.clientWidth
@@ -58,6 +60,14 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     cv.width = Math.round(W * d)
     cv.height = Math.round(H * d)
     ctx.setTransform(d, 0, 0, d, 0, 0)
+    // Cave and reef are static: paint once per size, then blit each frame.
+    scenery.width = cv.width
+    scenery.height = cv.height
+    const sc = scenery.getContext('2d')
+    if (sc && W > 0 && H > 0) {
+      sc.setTransform(d, 0, 0, d, 0, 0)
+      paintScenery(sc, W, H)
+    }
   }
   const ro = new ResizeObserver(resize)
   ro.observe(tank)
@@ -454,16 +464,18 @@ export function createEngine(tank: HTMLElement, cv: HTMLCanvasElement, hooks: En
     const g = ctx.createLinearGradient(0, 0, 0, H)
     g.addColorStop(0, '#0b2742'); g.addColorStop(0.5, '#06172b'); g.addColorStop(1, '#020812')
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
-    ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = '#bfe3ff'
+    ctx.save()
+    const ray = ctx.createLinearGradient(0, 0, 0, H * 0.75)
+    ray.addColorStop(0, 'rgba(191,227,255,.07)'); ray.addColorStop(1, 'rgba(191,227,255,0)')
+    ctx.fillStyle = ray
     for (let i = 0; i < 4; i++) {
       const x = W * (0.12 + i * 0.26) + Math.sin(t * 0.3 + i) * 20
       ctx.beginPath(); ctx.moveTo(x - 20, 0); ctx.lineTo(x + 20, 0); ctx.lineTo(x + 100, H * 0.75); ctx.lineTo(x - 10, H * 0.75); ctx.fill()
     }
     ctx.restore()
     for (const s of snow) { ctx.fillStyle = `rgba(200,225,255,${s.a})`; ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, TAU); ctx.fill() }
-    ctx.fillStyle = '#030d1a'; ctx.beginPath(); ctx.moveTo(0, H)
-    for (let x = 0; x <= W + 40; x += 40) ctx.lineTo(x, H - 20 - Math.sin(x * 0.02) * 10 - Math.sin(x * 0.007) * 14)
-    ctx.lineTo(W, H); ctx.closePath(); ctx.fill()
+    if (scenery.width) ctx.drawImage(scenery, 0, 0, W, H)
+    drawKelp(ctx, W, H, t)
     if (gI > 0.01) {
       const R = lureR() * (0.4 + 0.6 * gI), h = ctx.createRadialGradient(shark.x, shark.y, 0, shark.x, shark.y, R)
       h.addColorStop(0, `rgba(125,255,154,${0.32 * gI})`); h.addColorStop(0.5, `rgba(125,255,154,${0.1 * gI})`); h.addColorStop(1, 'rgba(125,255,154,0)')
