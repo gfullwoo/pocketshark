@@ -23,7 +23,7 @@ echo "==> Enabling APIs"
 gcloud services enable \
   run.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com \
   iamcredentials.googleapis.com sts.googleapis.com cloudresourcemanager.googleapis.com \
-  firebase.googleapis.com firebasehosting.googleapis.com
+  firebase.googleapis.com firebasehosting.googleapis.com firestore.googleapis.com
 
 echo "==> Artifact Registry repo"
 gcloud artifacts repositories describe "$AR_REPO" --location "$REGION" >/dev/null 2>&1 ||
@@ -53,6 +53,12 @@ for secret in stripe-secret-key stripe-webhook-secret; do
     --role roles/secretmanager.secretAccessor --condition=None >/dev/null
 done
 
+echo "==> Firestore (Glow & Gulp leaderboard)"
+gcloud firestore databases describe --database='(default)' >/dev/null 2>&1 ||
+  gcloud firestore databases create --database='(default)' --location "$REGION" --type firestore-native
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$RUNTIME" \
+  --role roles/datastore.user --condition=None >/dev/null
+
 echo "==> Deployer roles"
 for role in roles/run.admin roles/artifactregistry.writer roles/firebasehosting.admin roles/serviceusage.serviceUsageConsumer; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$DEPLOYER" \
@@ -76,7 +82,10 @@ gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role roles/iam.
 WIF_PROVIDER="projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/providers/$PROVIDER"
 
 echo "==> Firebase"
+# x-goog-user-project is required when calling with user (not service account) credentials;
+# without it the check 403s and the script wrongly tries to add Firebase again.
 if ! curl -sf -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+    -H "x-goog-user-project: $PROJECT_ID" \
     "https://firebase.googleapis.com/v1beta1/projects/$PROJECT_ID" >/dev/null; then
   npx --yes firebase-tools projects:addfirebase "$PROJECT_ID"
 fi

@@ -3,8 +3,11 @@ import { cors } from 'hono/cors'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type Stripe from 'stripe'
 import { CartSchema, buildSessionParams } from './checkout.js'
+import { registerGameRoutes, type GameDeps } from './game/routes.js'
 
 export interface AppOptions {
+  /** Glow & Gulp leaderboard. Omit to turn the game API off (the game still plays, without a board). */
+  game?: GameDeps
   stripe: Pick<Stripe, 'checkout' | 'webhooks'>
   siteUrl: string
   webhookSecret?: string
@@ -26,6 +29,8 @@ export function createApp(opts: AppOptions) {
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
+
+  if (opts.game) registerGameRoutes(app, opts.game)
 
   app.post('/api/checkout', async (c) => {
     const parsed = CartSchema.safeParse(await c.req.json().catch(() => null))

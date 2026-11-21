@@ -9,6 +9,7 @@ import { SwimmingSharks } from './components/SwimmingSharks'
 import { Home } from './views/Home'
 import { Shop } from './views/Shop'
 import { Thanks } from './views/Thanks'
+import { Play } from './views/Play'
 
 export default function App() {
   const route = useRoute()
@@ -25,6 +26,7 @@ export default function App() {
   let page
   if (route.path === '/shop') page = <Shop key={route.query.toString()} cart={cart} query={route.query} onAdded={() => setCartOpen(true)} />
   else if (route.path === '/thanks') page = <Thanks query={route.query} onPaid={cart.clear} />
+  else if (route.path === '/play') page = <Play />
   else page = <Home />
 
   return (

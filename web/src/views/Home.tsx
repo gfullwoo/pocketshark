@@ -48,6 +48,7 @@ export function Home() {
           <div className="hero__cta">
             <a className="btn btn--glow" href="#/shop">Shop the {PRODUCT.name}</a>
             <button className="btn btn--ghost" onClick={() => scrollToId('details')}>See the details</button>
+            <a className="btn btn--ghost" href="#/play">Play Glow &amp; Gulp</a>
           </div>
           <p className="muted small">From {formatUsd(SIZES[0].priceCents)} · Free shipping over $50</p>
         </div>

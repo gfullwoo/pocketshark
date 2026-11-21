@@ -67,3 +67,13 @@ Use `sk_test_...` until you've placed a test order end to end on the live domain
 - `SITE_URL` (used for Stripe redirects) is set to `https://mypocketshark.com` in the workflow.
 - API responses send `Cache-Control: no-store`, so the CDN never caches them. Hashed `/assets/**` files are cached for a year.
 - Cloud Run is set to min 0 / max 3 instances, 512 MiB of memory. Expect a cold start of about a second on the first API call after it's been idle.
+
+## 5. Glow & Gulp leaderboard
+
+The game at `/#/play` keeps its weekly board in Firestore (`glowgulp_runs`, `glowgulp_weeks/*`).
+
+- `infra/bootstrap.sh` creates the `(default)` Firestore database and gives the Cloud Run runtime account `roles/datastore.user`. If you already ran it before this section existed, run it again; every step skips what's already done.
+- On Cloud Run the API uses Firestore automatically. Locally it keeps scores in memory. Override with `LEADERBOARD=firestore|memory|off`.
+- **Prize:** the board resets Monday at midnight Eastern. The week's #1 run can claim a 20%-off code from the device it was played on, for 4 weeks. The API creates the Stripe coupon `glowgulp-weekly-20` the first time, then one single-use promotion code per week (valid 30 days). Checkout already accepts promotion codes.
+- **Privacy:** players never type anything. Nicknames come from fixed word lists (`server/src/game/nicknames.ts`), and the server rejects any other name.
+- **Cheating:** runs are server-issued and single-use, must last 3–90 seconds, and are score-capped by length. This stops casual faking, not a determined adult. Before a big promo, glance at the top score in the Stripe promotion code's metadata (`week`, `run`).

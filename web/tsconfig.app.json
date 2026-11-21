@@ -18,5 +18,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "../server/src/catalog.ts"]
+  "include": ["src", "../server/src/catalog.ts", "../server/src/game/nicknames.ts", "../server/src/game/rules.ts"]
 }
