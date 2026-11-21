@@ -1,5 +1,5 @@
 import { PRODUCT, SIZES, formatUsd } from '../../../server/src/catalog'
-import { HERO, PHOTOS } from '../lib/photos'
+import { HERO, PHOTOS, SIZE_PHOTOS } from '../lib/photos'
 import { scrollToId } from '../lib/nav'
 
 const FACTS = [
@@ -83,11 +83,19 @@ export function Home() {
         <div className="sizes">
           {SIZES.map((s) => (
             <a key={s.id} href={`#/shop?size=${s.id}`} className="size">
-              <span className="size__in">{s.inches}"</span>
-              <div className="ruler" style={{ width: `${(s.inches / 18) * 100}%` }} />
-              <h3>{s.name}</h3>
-              <p className="muted small">{s.blurb}</p>
-              <span className="price">{formatUsd(s.priceCents)}</span>
+              <div className="size__pic">
+                <img className="photo" src={SIZE_PHOTOS[s.id].src} alt={SIZE_PHOTOS[s.id].alt} loading="lazy" />
+                <span className="size__in">{s.inches}"</span>
+              </div>
+              <div className="size__body">
+                <div className="ruler" style={{ width: `${(s.inches / 18) * 100}%` }} />
+                <div className="size__row">
+                  <h3>{s.name}</h3>
+                  <span className="price">{formatUsd(s.priceCents)}</span>
+                </div>
+                <p className="muted small">{s.blurb}</p>
+                <span className="size__cta">Shop the {s.name} →</span>
+              </div>
             </a>
           ))}
         </div>

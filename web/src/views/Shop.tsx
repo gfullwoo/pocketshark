@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PRODUCT, SIZES, formatUsd, sizeById, type SizeId } from '../../../server/src/catalog'
-import { PHOTOS } from '../lib/photos'
+import { PHOTOS, SIZE_PHOTOS } from '../lib/photos'
 import type { Cart } from '../lib/cart'
 
 interface Props {
@@ -15,14 +15,16 @@ export function Shop({ cart, query, onAdded }: Props) {
   const [shot, setShot] = useState(0)
 
   const s = sizeById(size)!
-  const photo = PHOTOS[shot]
+  // first shot is always the selected size; the detail shots follow
+  const gallery = [SIZE_PHOTOS[size], ...PHOTOS]
+  const photo = gallery[shot]
 
   return (
     <section className="shop">
       <div className="shop__stage">
         <img className="photo photo--stage" src={photo.src} alt={photo.alt} />
         <div className="thumbs">
-          {PHOTOS.map((p, i) => (
+          {gallery.map((p, i) => (
             <button key={p.id} className={`thumb ${i === shot ? 'is-sel' : ''}`} onClick={() => setShot(i)} aria-label={p.alt} aria-pressed={i === shot}>
               <img src={p.src} alt="" />
             </button>
@@ -41,7 +43,10 @@ export function Shop({ cart, query, onAdded }: Props) {
           <legend>Size</legend>
           <div className="sizes-pick">
             {SIZES.map((sz) => (
-              <button key={sz.id} className={`pill ${sz.id === size ? 'is-sel' : ''}`} onClick={() => setSize(sz.id)} aria-pressed={sz.id === size}>
+              <button key={sz.id} className={`pill ${sz.id === size ? 'is-sel' : ''}`} onClick={() => {
+                  setSize(sz.id)
+                  setShot(0)
+                }} aria-pressed={sz.id === size}>
                 <strong>{sz.inches}"</strong>
                 <span>{sz.name}</span>
                 <small>{formatUsd(sz.priceCents)}</small>
