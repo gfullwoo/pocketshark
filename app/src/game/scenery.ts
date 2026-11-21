@@ -33,7 +33,7 @@ export function paintScenery(c: Ctx, W: number, H: number) {
   const between = (a: number, b: number) => a + r() * (b - a)
   const cave = caveBox(W, H)
 
-  // ---- cave: a craggy rock outcrop rising from the left, with a deep, jagged mouth ----
+  // ---- cave: a craggy rock outcrop rising from the left, with a deep, rounded mouth ----
   paintCave(c, W, H, cave)
   for (let i = 0; i < 125; i++) r() // keep the reef below laid out exactly as before
 
@@ -270,7 +270,7 @@ function paintCave(c: Ctx, W: number, H: number, cave: Box) {
     c.beginPath(); c.moveTo(x0, y0 + 2); c.lineTo(x, y + 2); c.stroke()
   }
 
-  // 4. the mouth: a jagged arch, with a thick shadowed rock lip around it
+  // 4. the mouth: a rounded rock arch, with a thick shadowed rock lip around it
   const arch = (k: number, jag: number): Pt[] => {
     const pts: Pt[] = []
     const n = 18
@@ -289,36 +289,24 @@ function paintCave(c: Ctx, W: number, H: number, cave: Box) {
     c.closePath(); c.fill()
   }
   // outer lip (rock rim, lit on top)
-  const lip = arch(1.22, 10)
+  const lip = arch(1.22, 3)
   const lipG = c.createLinearGradient(mx, mb - mh * 1.25, mx, mb)
   lipG.addColorStop(0, '#2f475e'); lipG.addColorStop(0.5, '#1a2d40'); lipG.addColorStop(1, '#0c1826')
   fillPts(lip, lipG)
   c.strokeStyle = 'rgba(160,205,240,.22)'; c.lineWidth = 1.6
   c.beginPath(); c.moveTo(lip[3][0], lip[3][1]); for (const p of lip.slice(4, 16)) c.lineTo(p[0], p[1]); c.stroke()
   // the opening, dark and deep: rings of shadow going back into the rock
-  const open = arch(1, 8)
+  const open = arch(1, 1.5)
   const deep = c.createRadialGradient(mx + mw * 0.1, mb - mh * 0.35, 2, mx, mb - mh * 0.45, mw * 1.25)
   deep.addColorStop(0, '#000000'); deep.addColorStop(0.55, '#01040a'); deep.addColorStop(1, '#0a1624')
   fillPts(open, deep)
   // inner wall: a second, smaller arch set back and to one side, so the tunnel reads as going deeper
-  const back = arch(0.62, 5).map(([x, y]): Pt => [x + mw * 0.12, y + (mb - y) * 0.05])
+  const back = arch(0.62, 1).map(([x, y]): Pt => [x + mw * 0.12, y + (mb - y) * 0.05])
   c.strokeStyle = 'rgba(70,110,145,.18)'; c.lineWidth = 1.4
   c.beginPath(); c.moveTo(back[0][0], back[0][1]); for (const p of back.slice(1)) c.lineTo(p[0], p[1]); c.stroke()
-  // rough inside edge of the opening
-  c.strokeStyle = 'rgba(0,0,0,.7)'; c.lineWidth = 3
+  // soft shadow along the inside edge of the opening
+  c.strokeStyle = 'rgba(0,0,0,.55)'; c.lineWidth = 4
   c.beginPath(); c.moveTo(open[0][0], open[0][1]); for (const p of open.slice(1)) c.lineTo(p[0], p[1]); c.stroke()
-
-  // 5. stalactites hanging from the top of the mouth
-  for (let i = 0; i < 7; i++) {
-    const f = 0.18 + (i / 6) * 0.64 + between(-0.04, 0.04)
-    const a = Math.PI + f * Math.PI
-    const x = mx + Math.cos(a) * mw * 0.98, y = mb + Math.sin(a) * mh * 0.98
-    const len = between(mh * 0.08, mh * 0.22) * Math.sin(f * Math.PI), wd = between(3, 6)
-    const g = c.createLinearGradient(x, y, x, y + len)
-    g.addColorStop(0, '#22384c'); g.addColorStop(1, '#0d1a28')
-    c.fillStyle = g
-    c.beginPath(); c.moveTo(x - wd, y - 2); c.lineTo(x + wd, y - 2); c.lineTo(x + between(-1, 1), y + len); c.closePath(); c.fill()
-  }
 
   // 6. moss and sea-growth on the upper surfaces
   for (let i = 0; i < 26; i++) {
