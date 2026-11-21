@@ -13,13 +13,20 @@ export interface Pred {
   dir: 1 | -1 // travel direction for the shark and crab
   ang: number // heading for the squid (radians)
   s: number // overall size in px
-  warn: number // seconds of "!" warning left before it appears
+  warn: number // legacy: always 0 (predators no longer give a warning)
   hunt: boolean // chasing a glowing pocket shark
   open: number // mouth open / claws wide, 0–1
   minD: number // closest it came to the pocket shark (for the dodge reward)
   done: boolean // already caught the shark once this pass
   ph: number // animation phase
   entered: boolean
+  /**
+   * Coming in from the background: it starts small and far away, swims toward
+   * the pocket shark's home while growing to full size (z 0 → 1), then turns
+   * and leaves left or right like a normal pass. It can't touch the pocket
+   * shark until it is nearly full size (in the same plane).
+   */
+  deep?: { z: number; fullS: number; x0: number; y0: number; tx: number; ty: number; dur: number }
   /**
    * Squid only: swimming; aiming (turns its arms toward the shark and pulls the
    * long tentacles back); striking (shoots them out); retracting; resting.

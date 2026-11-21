@@ -270,7 +270,7 @@ function CareCard({ card, onClose, onWatchStory }: { card: Card; onClose: () => 
             <Text style={styles.cardTitle}>Meet your pocket shark</Text>
             <Text style={styles.cardText}>It’s one of the rarest sharks in the world, and it’s counting on you.</Text>
             <Text style={styles.cardText}>Use the joystick on the left to swim. Hold <Text style={styles.em}>Glow</Text> on the right to light up the pockets behind its fins, and snacks swim to the light.</Text>
-            <Text style={styles.cardText}>Glowing also catches a predator’s eye. Big sharks, squid and crabs are dangerous: don’t touch them! When you see the yellow warning, let go of Glow or swim <Text style={styles.em}>Home</Text> to the cave.</Text>
+            <Text style={styles.cardText}>Glowing also catches a predator’s eye. Big sharks, squid and crabs are dangerous: don’t touch them! Watch the water, even far off in the distance. When one comes, let go of Glow or swim <Text style={styles.em}>Home</Text> to the cave.</Text>
             <Text style={styles.cardText}>Keep it fed and safe, and it stays happy and earns Glow Points, even while you’re away.</Text>
           </>
         ) : (

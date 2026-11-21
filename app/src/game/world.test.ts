@@ -141,7 +141,7 @@ describe('crab', () => {
     expect(states.has('crouch')).toBe(true)
     expect(states.has('air')).toBe(true)
     expect(h.onScare).toHaveBeenCalledTimes(1)
-    expect(h.onToast).toHaveBeenCalledWith('The crab is about to jump!', expect.any(String))
+    expect(h.onToast).not.toHaveBeenCalledWith('The crab is about to jump!', expect.any(String))
   })
 
   it('cannot reach a shark staying high in the water', () => {
@@ -187,7 +187,7 @@ describe('squid', () => {
     expect(states.has('aim')).toBe(true)
     expect(states.has('strike')).toBe(true)
     expect(h.onScare).toHaveBeenCalledTimes(1)
-    expect(h.onToast).toHaveBeenCalledWith('The squid is striking!', expect.any(String))
+    expect(h.onToast).not.toHaveBeenCalledWith('The squid is striking!', expect.any(String))
   })
 
   it('misses a shark that darts out of reach during the wind-up', () => {
@@ -229,5 +229,33 @@ describe('harder snacks and more predators', () => {
     while (!w.pred && t < 6) { w.update(1 / 30, true, false, h); t += 1 / 30 }
     expect(w.pred).toBeTruthy()
     expect(t).toBeLessThan(5.5)
+  })
+})
+
+describe('predators from the background', () => {
+  it.each(['shark', 'squid'] as const)('%s starts small, grows as it nears home, then leaves left or right', (kind) => {
+    const w = makeWorld(), h = hooks()
+    const p = w.spawnFromBackground(kind)
+    w.pred = p
+    const full = p.deep!.fullS
+    expect(p.s).toBeLessThan(full * 0.2)
+    // far away it passes right through the pocket shark without touching it
+    placeShark(w, p.x, p.y)
+    w.update(1 / 60, true, false, h)
+    expect(h.onScare).not.toHaveBeenCalled()
+    let t = 0
+    while (w.pred?.deep && t < 6) { placeShark(w, W - 20, 40); w.update(1 / 30, true, false, h); t += 1 / 30 }
+    expect(w.pred?.deep).toBeUndefined()
+    expect(w.pred!.s).toBeCloseTo(full)
+    const home = w.home()
+    expect(Math.abs(w.pred!.x - home.x)).toBeLessThan(W * 0.6)
+    while (w.pred && t < 20) { placeShark(w, W - 20, 40); w.update(1 / 30, true, false, h); t += 1 / 30 }
+    expect(w.pred).toBeNull()
+  })
+
+  it('never shows a warning toast when a predator arrives', () => {
+    const w = makeWorld(), h = hooks()
+    for (let i = 0; i < 30 * 30; i++) w.update(1 / 30, false, false, h)
+    for (const [msg] of h.onToast.mock.calls) expect(String(msg)).not.toMatch(/coming|sees|about to|striking|scuttling/i)
   })
 })

@@ -8,7 +8,7 @@
 // but touching ANY part of one is a catch: a scare that sends it darting home.
 import type { Snack } from '../model/care'
 import type { Ctx2D } from './ctx2d'
-import { drawPredator, drawWarning, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
+import { drawPredator, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
 
@@ -98,7 +98,7 @@ export class World {
   private preyTarget() { return Math.round(6 + (this.W * this.H) / 60000) }
   size() { return Math.max(52, Math.min(90, Math.min(this.W, this.H) * 0.16)) }
   private lureR() { return Math.min(this.W, this.H) * 0.42 }
-  private maxSpeed() { return Math.max(170, Math.min(this.W, this.H) * 0.6) }
+  private maxSpeed() { return Math.max(210, Math.min(this.W, this.H) * 0.75) }
 
   /** Where the shark sits when it is home: inside the cave mouth. */
   home() {
@@ -160,26 +160,77 @@ export class World {
     const base = { kind, dir: (fromLeft ? 1 : -1) as 1 | -1, ang: 0, hunt: false, open: 0, minD: 1e9, done: false, ph: 0, entered: false }
     if (kind === 'shark') {
       const s = Math.min(W, this.H) * 0.6 + 100
-      return { ...base, s, x: fromLeft ? -s * 0.6 : W + s * 0.6, y: Math.max(s * 0.25, Math.min(SH * 0.7, this.shark.y + rnd(-60, 60))), warn: 2.5 }
+      return { ...base, s, x: fromLeft ? -s * 0.6 : W + s * 0.6, y: Math.max(s * 0.25, Math.min(SH * 0.7, this.shark.y + rnd(-60, 60))), warn: 0 }
     }
     if (kind === 'squid') {
       const s = Math.min(W, this.H) * 0.34 + 50
       const x = fromLeft ? -s * 0.6 : W + s * 0.6, y = rnd(SH * 0.1, SH * 0.55)
       const aimX = this.shark.x + rnd(-80, 80), aimY = this.shark.y + rnd(-60, 60)
-      return { ...base, s, x, y, ang: Math.atan2(aimY - y, aimX - x), warn: 2.2, squid: { state: 'swim', t: 0, e: 0, warned: false } }
+      return { ...base, s, x, y, ang: Math.atan2(aimY - y, aimX - x), warn: 0, squid: { state: 'swim', t: 0, e: 0, warned: false } }
     }
     const s = Math.min(W, this.H) * 0.22 + 30
     const x = fromLeft ? -s * 0.8 : W + s * 0.8
     return {
-      ...base, s, x, y: seabedY(Math.max(0, Math.min(W, x)), SH) - s * 0.22, warn: 2,
+      ...base, s, x, y: seabedY(Math.max(0, Math.min(W, x)), SH) - s * 0.22, warn: 0,
       crab: { state: 'walk', t: 0, vx: 0, vy: 0, warned: false },
     }
   }
 
-  /** Where the "!" warning for a predator shows. */
-  private warnAt(p: Pred) {
-    const x = p.x < this.W / 2 ? 28 : this.W - 28
-    return { x, y: Math.max(40, Math.min(this.SH - 24, p.y)) }
+  /**
+   * A big shark or squid that starts small, far off in the background, and
+   * swims toward the pocket shark's home while it grows to full size.
+   */
+  spawnFromBackground(kind: 'shark' | 'squid'): Pred {
+    const { W, SH } = this, h = this.home()
+    const p = this.spawnPredator(kind)
+    const fullS = p.s
+    const tx = h.x + rnd(40, 140)
+    const ty = Math.max(fullS * 0.28, h.y - fullS * (kind === 'shark' ? 0.3 : 0.45))
+    const x0 = rnd(W * 0.35, W * 0.9), y0 = rnd(SH * 0.12, SH * 0.32)
+    p.dir = tx >= x0 ? 1 : -1
+    p.x = x0; p.y = y0
+    p.ang = Math.atan2(ty - y0, tx - x0)
+    p.entered = true
+    p.deep = { z: 0, fullS, x0, y0, tx, ty, dur: rnd(3.2, 4.4) }
+    p.s = fullS * 0.12
+    return p
+  }
+
+  /** Still small and far enough back to be drawn behind the reef. */
+  private farAway(p: Pred) { return !!p.deep && p.deep.z < 0.7 }
+
+  /** The approach from the background, then hand over to a normal pass left or right. */
+  private updateDeep(pr: Pred, dt: number, home: boolean, resting: boolean, hooks: WorldHooks) {
+    const dp = pr.deep!
+    dp.z = Math.min(1, dp.z + dt / dp.dur)
+    const e = dp.z * dp.z * (3 - 2 * dp.z)
+    pr.x = dp.x0 + (dp.tx - dp.x0) * e
+    pr.y = dp.y0 + (dp.ty - dp.y0) * e
+    pr.s = dp.fullS * (0.12 + 0.88 * dp.z)
+    pr.ph += dt * (pr.kind === 'squid' ? 3.2 : 4)
+    const d = Math.hypot(pr.x - this.shark.x, pr.y - this.shark.y)
+    pr.minD = Math.min(pr.minD, d)
+    // close enough to be in the same plane as the pocket shark: it can catch it
+    if (dp.z > 0.9 && !pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
+    if (dp.z >= 1) {
+      // turn and leave the screen to the left or right
+      pr.deep = undefined
+      pr.s = dp.fullS
+      pr.minD = 1e9
+      if (pr.kind === 'squid') {
+        pr.ang = pr.dir > 0 ? 0 : Math.PI
+        if (pr.squid) { pr.squid.state = 'swim'; pr.squid.t = 0.6 }
+      }
+    }
+  }
+
+  /** Draw a predator, faded by distance while it is still coming from the background. */
+  private drawDeep(ctx: Ctx2D, p: Pred, t: number) {
+    if (!p.deep) { drawPredator(ctx, p, t); return }
+    ctx.save()
+    ctx.globalAlpha = Math.min(1, 0.3 + p.deep.z * 0.85)
+    drawPredator(ctx, p, t)
+    ctx.restore()
   }
 
   /** How far a squid's tentacles reach from its body when thrown, in px. */
@@ -203,7 +254,6 @@ export class World {
     }
     if (q.state === 'swim' || q.state === 'cool') {
       if (!pr.done && this.gI > 0.35 && !home && d < pr.s * 1.6) {
-        if (!pr.hunt) hooks.onToast(PRED_INFO.squid.sees, '#ff8fb1')
         pr.hunt = true
       } else if (pr.hunt && (this.gI < 0.2 || home)) pr.hunt = false
       if (pr.hunt && q.state === 'swim') turnToward(Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 1.4)
@@ -217,7 +267,6 @@ export class World {
       if (q.state === 'swim' && !pr.done && !home && q.t <= 0 && d < this.squidReach(pr) * 0.92) {
         q.state = 'aim'
         q.t = 0.45
-        if (!q.warned) { hooks.onToast('The squid is striking!', '#ff8fb1'); q.warned = true }
       }
     } else if (q.state === 'aim') {
       // point the arms (the back of the squid) at the shark and wind up
@@ -256,7 +305,6 @@ export class World {
       if (!pr.done && !home && inRange && c.t <= 0) {
         c.state = 'crouch'
         c.t = 0.4
-        if (!c.warned) { hooks.onToast(PRED_INFO.crab.sees, '#ff8fb1'); c.warned = true }
       }
     } else if (c.state === 'crouch') {
       pr.y = ground(pr.x) + pr.s * 0.04
@@ -399,12 +447,12 @@ export class World {
     // ---- predators ----
     this.nextPred -= dt
     if (!this.pred && this.nextPred <= 0 && !resting) {
-      this.pred = this.spawnPredator(pickPredator())
-      hooks.onToast(PRED_INFO[this.pred.kind].coming, '#ffd166')
+      const kind = pickPredator()
+      this.pred = kind !== 'crab' && Math.random() < 0.5 ? this.spawnFromBackground(kind) : this.spawnPredator(kind)
     }
     const pr = this.pred
     if (pr) {
-      if (pr.warn > 0) pr.warn -= dt
+      if (pr.deep) this.updateDeep(pr, dt, home, resting, hooks)
       else {
         pr.ph += dt * (pr.kind === 'squid' ? 3.2 : 4)
         const d = Math.hypot(pr.x - this.shark.x, pr.y - this.shark.y)
@@ -413,7 +461,6 @@ export class World {
           const ahead = pr.dir > 0 ? this.shark.x > pr.x : this.shark.x < pr.x
           if (!pr.done && !pr.hunt && ahead && this.gI > 0.35 && !home && d < pr.s * 0.8) {
             pr.hunt = true
-            hooks.onToast(PRED_INFO.shark.sees, '#ff8fb1')
           } else if (pr.hunt && (this.gI < 0.2 || !ahead || home)) pr.hunt = false
           const sc = pr.s / 230
           if (pr.hunt) pr.y += (this.shark.y - 10 * sc - pr.y) * Math.min(1, dt * 2.4)
@@ -473,6 +520,8 @@ export class World {
       ctx.fillStyle = `rgba(200,225,255,${s.a})`
       ctx.beginPath(); ctx.arc(s.x * W, s.y * H, s.r, 0, TAU); ctx.fill()
     }
+    // a predator far off in the background swims behind the reef
+    if (this.pred && this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     // seabed below the scene (under the on-screen controls)
     ctx.fillStyle = '#030b16'
     ctx.fillRect(0, this.SH - 2, W, H - this.SH + 2)
@@ -486,7 +535,7 @@ export class World {
       ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill()
     }
     // a crab walks on the seabed, behind the swimmers
-    if (this.pred && this.pred.warn <= 0 && this.pred.kind === 'crab') drawPredator(ctx, this.pred, t)
+    if (this.pred && this.pred.kind === 'crab') drawPredator(ctx, this.pred, t)
     for (const p of this.prey) if (p.eat === undefined) this.drawPrey(ctx, p)
     ctx.save()
     if (this.atHome()) ctx.globalAlpha = 0.75
@@ -495,8 +544,7 @@ export class World {
     // snacks being gulped are drawn over the open mouth
     for (const p of this.prey) if (p.eat !== undefined) this.drawPrey(ctx, p)
     if (this.pred) {
-      if (this.pred.warn > 0) { const w = this.warnAt(this.pred); drawWarning(ctx, w.x, w.y, t) }
-      else if (this.pred.kind !== 'crab') drawPredator(ctx, this.pred, t)
+      if (this.pred.kind !== 'crab' && !this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     }
     for (const q of this.parts) {
       ctx.globalAlpha = Math.max(0, q.l / 0.6); ctx.fillStyle = q.c
