@@ -23,7 +23,7 @@ export interface CareState {
   stats: { eaten: number; dodges: number; scares: number; captures?: number; continues?: number }
   /** Sea map progress: the place the shark is in now (1–20). */
   level: number
-  /** Points earned in this place (eating and dodging) toward finding a friend. */
+  /** Glow Points earned since arriving in this place (all of them count) toward finding a friend. */
   levelGp: number
   /** Friends found, each living in the place where they met. */
   friends: { level: number; name: string }[]
@@ -144,6 +144,7 @@ function payHappy(s: CareState, dt: number) {
   while (s.happySeconds >= H) {
     s.happySeconds -= H
     s.gp += RULES.happyGpPerHour
+    s.levelGp += RULES.happyGpPerHour
   }
 }
 
@@ -219,6 +220,7 @@ export function checkIn(s: CareState, now: number): number {
   if (s.lastCheckIn === day) return 0
   s.lastCheckIn = day
   s.gp += RULES.checkInGp
+  s.levelGp += RULES.checkInGp
   return RULES.checkInGp
 }
 

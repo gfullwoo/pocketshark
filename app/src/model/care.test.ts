@@ -140,11 +140,13 @@ describe('saved games from the earlier version', () => {
 })
 
 describe('sea map progress', () => {
-  it('counts points from eating and dodging toward this place, and a friend comes at the goal', () => {
+  it('counts every Glow Point toward this place (eating, dodging, daily bonus), and a friend comes at the goal', () => {
     const s = newShark(T0)
     expect(s.level).toBe(1)
     eat(s, 'gold'); eat(s, 'shrimp'); dodge(s)
     expect(s.levelGp).toBe(18)
+    checkIn(s, T0)
+    expect(s.levelGp).toBe(28)
     expect(friendDue(s, 150)).toBe(false)
     s.levelGp = 150
     expect(friendDue(s, 150)).toBe(true)

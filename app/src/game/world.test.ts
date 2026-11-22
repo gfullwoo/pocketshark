@@ -409,3 +409,23 @@ describe('levels and friends', () => {
     expect(w.look.kelp.extra).toBeGreaterThan(0)
   })
 })
+
+describe('garden eels (Sandy Flats)', () => {
+  it('only Sandy Flats has them', () => {
+    const w = makeWorld()
+    expect(w.eels).toHaveLength(0)
+    w.setLevel(3)
+    expect(w.eels.length).toBeGreaterThan(5)
+  })
+
+  it('duck into the sand when the shark comes close, then peek back out once it leaves', () => {
+    const w = makeWorld(), h = hooks()
+    w.setLevel(3)
+    w.pred = null
+    const el = w.eels[0]
+    for (let i = 0; i < 30; i++) { placeShark(w, el.x, el.base - 20); w.update(1 / 30, false, false, h) }
+    expect(el.e).toBeLessThan(0.1)
+    for (let i = 0; i < 30 * 6; i++) { placeShark(w, 20, 40); w.pred = null; w.update(1 / 30, false, false, h) }
+    expect(el.e).toBeGreaterThan(0.9)
+  })
+})

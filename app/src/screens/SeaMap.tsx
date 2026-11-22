@@ -79,7 +79,8 @@ function paintMap(c: Ctx2D, W: number, H: number, s: CareState | null, t: number
   drawPocketShark(c, PLAYER_LOOK, { x: p.x + 60, y: p.y + Math.sin(t * 2.4) * 3, dir: -1, tilt: 0, scale: 0.5, t, glow: 0.5 + 0.5 * Math.sin(t * 3), mouth: 0, mood: 'normal' })
 }
 
-export function SeaMap({ onPlay, onBack }: { onPlay: () => void; onBack?: () => void }) {
+/** `onPlay()` swims in at the current place; `onPlay(n)` visits a friend at finished place n. */
+export function SeaMap({ onPlay, onBack }: { onPlay: (visit?: number) => void; onBack?: () => void }) {
   const insets = useSafeAreaInsets()
   const [care, setCare] = useState<CareState | null>(null)
   const [W, setW] = useState(0)
@@ -120,6 +121,9 @@ export function SeaMap({ onPlay, onBack }: { onPlay: () => void; onBack?: () => 
   }, [care, W])
 
   const cur = care?.level ?? 1
+  const [picked, setPicked] = useState<number | null>(null)
+  const sel = picked ?? cur
+  const selFriend = care?.friends.find((f) => f.level === sel)
   const friendsFound = care?.friends.length ?? 0
   const nodes = useMemo(() => LEVELS.map((L, i) => ({ L, ...nodeAt(i, W) })), [W])
 
@@ -141,18 +145,19 @@ export function SeaMap({ onPlay, onBack }: { onPlay: () => void; onBack?: () => 
           const here = L.n === cur
           const built = playable(L.n)
           const locked = L.n > cur
-          const label = done ? `${L.friend.name} lives here` : here ? (built ? 'You are here' : 'Coming soon') : locked ? (built ? 'Locked' : 'Coming soon') : ''
+          const label = done ? `${L.friend.name} lives here · tap to visit` : here ? (built ? 'You are here' : 'Coming soon') : locked ? (built ? 'Locked' : 'Coming soon') : ''
           return (
             <View key={L.n} style={[styles.nodeWrap, { left: x - 90, top: y - NODE / 2 }]} pointerEvents="box-none">
               <Pressable
-                disabled={!here || !built}
-                onPress={onPlay}
+                disabled={!(here || done)}
+                onPress={() => setPicked(L.n)}
                 accessibilityRole="button"
                 accessibilityLabel={`Level ${L.n}, ${L.name}. ${label}`}
                 style={({ pressed }) => [
                   styles.node,
                   done && styles.nodeDone,
                   here && styles.nodeHere,
+                  L.n === sel && !here && styles.nodePicked,
                   locked && styles.nodeLocked,
                   pressed && { transform: [{ scale: 0.95 }] },
                 ]}
@@ -168,11 +173,20 @@ export function SeaMap({ onPlay, onBack }: { onPlay: () => void; onBack?: () => 
       {/* where you are now, and the button to swim there */}
       {care && (
         <View style={[styles.dock, { paddingBottom: insets.bottom + 14 }]}>
-          <Text style={styles.dockLevel}>Level {cur}</Text>
-          <Text style={styles.dockName}>{LEVELS[cur - 1].name}</Text>
-          <Text style={styles.dockBlurb}>{LEVELS[cur - 1].blurb}</Text>
-          {playable(cur) ? (
-            <Pressable onPress={onPlay} style={({ pressed }) => [styles.swim, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+          <Text style={styles.dockLevel}>Level {sel}{selFriend ? ` · ${selFriend.name}’s home` : ''}</Text>
+          <Text style={styles.dockName}>{LEVELS[sel - 1].name}</Text>
+          <Text style={styles.dockBlurb}>{selFriend ? `${selFriend.name} lives here now. Swim over and say hello!` : LEVELS[sel - 1].blurb}</Text>
+          {selFriend && sel !== cur ? (
+            <View style={styles.dockRow}>
+              <Pressable onPress={() => setPicked(null)} style={({ pressed }) => [styles.swim, styles.swimAlt, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+                <Text style={[styles.swimText, { color: colors.glow }]}>Back to Level {cur}</Text>
+              </Pressable>
+              <Pressable onPress={() => onPlay(sel)} style={({ pressed }) => [styles.swim, styles.swimVisit, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+                <Text style={styles.swimText}>Visit {selFriend.name}</Text>
+              </Pressable>
+            </View>
+          ) : playable(cur) ? (
+            <Pressable onPress={() => onPlay()} style={({ pressed }) => [styles.swim, pressed && { opacity: 0.85 }]} accessibilityRole="button">
               <Text style={styles.swimText}>Swim here</Text>
             </Pressable>
           ) : (
@@ -212,6 +226,10 @@ const styles = StyleSheet.create({
   dockName: { color: colors.text, fontSize: 24, fontWeight: '800', marginTop: 2 },
   dockBlurb: { color: '#c7dcf0', fontSize: 15, marginTop: 2 },
   dockSoon: { color: colors.gold, fontSize: 15, marginTop: 10 },
+  dockRow: { flexDirection: 'row', gap: 10 },
+  swimAlt: { flex: 1, backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.line },
+  swimVisit: { flex: 1, backgroundColor: colors.gold },
+  nodePicked: { borderColor: '#fff', borderWidth: 3 },
   back: { position: 'absolute', right: 16, minHeight: 44, paddingHorizontal: 18, justifyContent: 'center', borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   backText: { color: colors.glow, fontSize: 16, fontWeight: '700' },
 })

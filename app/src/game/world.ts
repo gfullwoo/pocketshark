@@ -11,6 +11,7 @@ import type { Ctx2D } from './ctx2d'
 import { drawBeam, drawSonar, drawSub, inBeam, subLamp, type Sub } from './submarine'
 import { level as levelDef, type Difficulty, type Look } from './levels'
 import { drawPocketShark, PLAYER_LOOK, type SharkLook } from './pocketShark'
+import { drawEels, makeEels, updateEels, type Eel } from './eels'
 import { drawPredator, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
@@ -108,6 +109,8 @@ export class World {
   friend: { x: number; y: number; dir: number; tilt: number; look: SharkLook; met: boolean; t: number } | null = null
   /** No new predators or submarines (a friend is on the way). */
   calm = false
+  /** Garden eels in the sand (places whose look has them). */
+  eels: Eel[] = []
   /** Being pulled up into the submarine (seconds since the catch), then caught for good. */
   capture: { t: number; x: number; y: number; done: boolean } | null = null
   /** The sub is hunting: the music turns scary. */
@@ -124,6 +127,7 @@ export class World {
     this.W = W
     this.H = H
     this.SH = Math.max(H * 0.55, H - floorInset)
+    this.placeEels()
     if (first) {
       const h = this.home()
       this.shark.x = h.x
@@ -519,6 +523,7 @@ export class World {
     this.updateCamera(dt)
     if (this.capture) { this.updateCapture(dt, hooks); return }
     this.updateFriend(dt, hooks)
+    if (this.eels.length) updateEels(this.eels, dt, this.shark, this.gI, this.size())
     if (this.fleeT > 0) this.fleeT -= dt
     if (this.scaredT > 0) this.scaredT -= dt
     const auto = resting || this.scared || this.homing
@@ -708,6 +713,7 @@ export class World {
     ctx.fillRect(0, this.SH - 2, W, H - this.SH + 2)
     scenery()
     drawKelp(ctx, W, this.SH, t, this.look)
+    if (this.eels.length) drawEels(ctx, this.eels, t)
     if (this.gI > 0.01) {
       const R = this.lureR() * (0.4 + 0.6 * this.gI), { x, y } = this.shark
       const h = ctx.createRadialGradient(x, y, 0, x, y, R)
@@ -828,6 +834,8 @@ export class World {
     // swim to the pocket shark; once met, keep alongside it, just behind
     const tx = f.met ? this.shark.x - this.shark.dir * s * 1.05 : this.shark.x + (f.x > this.shark.x ? s * 0.9 : -s * 0.9)
     const ty = f.met ? this.shark.y - s * 0.35 + Math.sin(f.t * 2) * 4 : this.shark.y
+    // a friend who already lives here and is far off (e.g. placed before the screen had its size) joins right away
+    if (f.met && (Math.hypot(tx - f.x, ty - f.y) > s * 6 || f.x < -s || f.x > this.W + s)) { f.x = tx; f.y = ty }
     const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy)
     const sp = f.met ? Math.min(this.maxSpeed() * 1.1, d * 3) : Math.min(this.maxSpeed() * 0.75, 40 + d * 2)
     if (d > 1) { f.x += (dx / d) * sp * dt; f.y += (dy / d) * sp * dt }
@@ -874,5 +882,10 @@ export class World {
     this.capture = null
     this.nextPred = 5
     this.nextSub = rnd(...this.diff.subFirst)
+    this.placeEels()
+  }
+
+  private placeEels() {
+    this.eels = this.look.eels && this.W > 1 ? makeEels(this.W, this.SH, caveBox(this.W, this.SH).w) : []
   }
 }

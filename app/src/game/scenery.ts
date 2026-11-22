@@ -50,6 +50,20 @@ export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_
   c.beginPath(); c.moveTo(0, H)
   for (let x = 0; x <= W + 20; x += 20) c.lineTo(x, seabedY(x, H))
   c.lineTo(W, H); c.closePath(); c.fill()
+  // ripples in the sand: soft wavy lines, light on top and shadow below
+  if (look.ripples) {
+    for (let row = 0; row < 4; row++) {
+      for (let x0 = cave.w * 0.9 - row * 30; x0 < W; x0 += 34 + row * 6) {
+        const y0 = seabedY(x0, H) + 5 + row * 6
+        c.strokeStyle = 'rgba(210,195,150,.16)'; c.lineWidth = 1.4
+        c.beginPath(); c.moveTo(x0, y0)
+        c.quadraticCurveTo(x0 + 9, y0 - 3, x0 + 18, y0); c.quadraticCurveTo(x0 + 24, y0 + 2, x0 + 28, y0)
+        c.stroke()
+        c.strokeStyle = 'rgba(0,0,0,.18)'; c.lineWidth = 1
+        c.beginPath(); c.moveTo(x0 + 1, y0 + 1.5); c.quadraticCurveTo(x0 + 10, y0 - 1.5, x0 + 19, y0 + 1.5); c.stroke()
+      }
+    }
+  }
   // pebbles
   for (let i = 0; i < Math.round(W / 18); i++) {
     const x = between(0, W)

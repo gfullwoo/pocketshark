@@ -31,7 +31,7 @@ const CONTROLS_HEIGHT = 170
 interface Hud {
   glow: number; health: number; gp: number; levelGp: number
   /** The place on the sea map, and whether its friend has been found. */
-  n: number; found: boolean
+  n: number; found: boolean; visiting: boolean
   mood: Mood | 'scared'; need: string; glowOn: boolean; atHome: boolean
 }
 
@@ -48,7 +48,7 @@ function builtLevel(n: number) {
   return k
 }
 
-export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => void; onOpenMap?: () => void }) {
+export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; onWatchStory?: () => void; onOpenMap?: () => void }) {
   const insets = useSafeAreaInsets()
   const [picture, setPicture] = useState<SkPicture | null>(null)
   const world = useRef(new World())
@@ -66,6 +66,9 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
   const [card, setCard] = useState<Card | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const paused = useRef(false)
+  /** Visiting a friend at a finished place (no new friend comes while visiting). */
+  const visiting = useRef<number | undefined>(undefined)
+  useEffect(() => { visiting.current = visit && visit > 0 ? visit : undefined }, [visit])
   const isPaused = menuOpen || card?.kind === 'caught' || card?.kind === 'friend'
   useEffect(() => { paused.current = isPaused }, [isPaused])
 
@@ -96,7 +99,7 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
       const fresh = s.stats.eaten === 0 && s.lastCheckIn === ''
       care.current = s
       // swim in the saved place on the sea map
-      const n = builtLevel(s.level), w = world.current
+      const n = visiting.current ?? builtLevel(s.level), w = world.current
       w.setLevel(n)
       const here = s.friends.find((f) => f.level === n)
       if (here) w.keepFriend(friendLook(level(n).friend.pattern))
@@ -157,7 +160,7 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
           tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3, moving: w.effort })
           // enough points here: a friend comes looking for the pocket shark
           const L = level(builtLevel(s.level))
-          if (!w.friend && !w.capture && !s.resting && friendDue(s, L.goal)) {
+          if (visiting.current === undefined && !w.friend && !w.capture && !s.resting && friendDue(s, L.goal)) {
             w.summonFriend(friendLook(L.friend.pattern))
             showToast('Someone is swimming over to you…', '#ffd166')
           }
@@ -170,7 +173,7 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
           setDanger(w.danger && !paused.current)
           setHud({
             glow: s.glow, health: s.health, gp: s.gp, levelGp: s.levelGp,
-            n: builtLevel(s.level), found: s.friends.some((f) => f.level === builtLevel(s.level)),
+            visiting: visiting.current !== undefined, n: visiting.current ?? builtLevel(s.level), found: s.friends.some((f) => f.level === (visiting.current ?? builtLevel(s.level))),
             mood: w.scared && !s.resting ? 'scared' : mood(s),
             need: w.scared && !s.resting ? 'Ouch! Hiding in the cave until it feels safe.' : need(s),
             glowOn: w.glowOn, atHome: w.atHome(),
@@ -249,7 +252,7 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
             <Meter label="Health" value={hud.health} color={colors.pink} />
             <Meter label="Glow" value={hud.glow} color={colors.glow} />
           </View>
-          <FriendMeter levelGp={hud.levelGp} n={hud.n} found={hud.found} />
+          <FriendMeter levelGp={hud.levelGp} n={hud.n} found={hud.found} visiting={hud.visiting} />
           <Text style={styles.need}>{hud.need}</Text>
         </View>
       )}
@@ -312,14 +315,14 @@ export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => voi
 }
 
 /** Progress toward finding a friend in this place. */
-function FriendMeter({ levelGp, n, found }: { levelGp: number; n: number; found: boolean }) {
+function FriendMeter({ levelGp, n, found, visiting }: { levelGp: number; n: number; found: boolean; visiting: boolean }) {
   const L = level(n)
   const v = Math.min(1, levelGp / L.goal)
   return (
     <View style={styles.friendMeter} accessibilityLabel={`Level ${n}, ${L.name}. ${found ? 'Friend found' : `${Math.min(levelGp, L.goal)} of ${L.goal} points to find a friend`}`}>
       <View style={styles.friendRow}>
         <Text style={styles.levelName} numberOfLines={1}>Level {n} · {L.name}</Text>
-        <Text style={styles.friendCount}>{found ? `${L.friend.name} lives here` : `${Math.min(levelGp, L.goal)} / ${L.goal}`}</Text>
+        <Text style={styles.friendCount}>{found ? (visiting ? `Visiting ${L.friend.name}` : `${L.friend.name} lives here`) : `${Math.min(levelGp, L.goal)} / ${L.goal}`}</Text>
       </View>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${Math.max(2, (found ? 1 : v) * 100)}%`, backgroundColor: colors.gold }]} />

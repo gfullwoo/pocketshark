@@ -20,6 +20,8 @@ function previewStart(): number | null {
 export default function App() {
   const [screen, setScreen] = useState<'loading' | 'story' | 'map' | 'reef'>('loading')
   const [startAt] = useState(previewStart)
+  /** Visiting a friend at a finished place (undefined = the current place). */
+  const [visit, setVisit] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     if (startAt != null) { setScreen('story'); return }
@@ -39,8 +41,8 @@ export default function App() {
       <StatusBar style="light" />
       {screen === 'loading' && <View style={{ flex: 1, backgroundColor: colors.abyss }} />}
       {screen === 'story' && <IntroStory onDone={finishStory} startAt={startAt ?? 0} />}
-      {screen === 'map' && <SeaMap onPlay={() => setScreen('reef')} />}
-      {screen === 'reef' && <HomeReef onWatchStory={() => setScreen('story')} onOpenMap={() => setScreen('map')} />}
+      {screen === 'map' && <SeaMap onPlay={(n) => { setVisit(n); setScreen('reef') }} />}
+      {screen === 'reef' && <HomeReef visit={visit} onWatchStory={() => setScreen('story')} onOpenMap={() => setScreen('map')} />}
     </SafeAreaProvider>
   )
 }

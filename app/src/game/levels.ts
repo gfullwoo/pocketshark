@@ -20,6 +20,10 @@ export interface Look {
   seagrass: boolean
   /** Soft distant terrain colors, far to near ("r,g,b"). */
   backdrop: [string, string, string]
+  /** Ripples drawn in the sand. */
+  ripples?: boolean
+  /** Colonies of garden eels poking out of burrows in the sand. */
+  eels?: boolean
 }
 
 /** How hard a place is. Level 1 is the baseline. */
@@ -125,7 +129,20 @@ const KELP_FOREST: Look = {
   backdrop: ['22,64,58', '14,46,42', '8,28,26'],
 }
 
-const LOOKS: Record<number, Look> = { 1: REEF, 2: KELP_FOREST }
+const SANDY_FLATS: Look = {
+  water: ['#14405a', '#0a2638', '#03111c'],
+  rock: { light: '#5c5644', mid: '#36322a', dark: '#16140f' },
+  sand: ['#4d4733', '#1b1912'],
+  coral: ['#8c5638', '#7d3f68', '#9a4a5a'],
+  coralGap: [170, 260],
+  kelp: { stalk: 'rgba(70,96,70,.6)', leaf: 'rgba(84,112,80,.5)', extra: 0, tall: 0, bulbs: false },
+  seagrass: false,
+  backdrop: ['44,70,82', '34,56,64', '24,40,46'],
+  ripples: true,
+  eels: true,
+}
+
+const LOOKS: Record<number, Look> = { 1: REEF, 2: KELP_FOREST, 3: SANDY_FLATS }
 
 export const LEVELS: Level[] = PLACES.map(([name, blurb], i) => ({
   n: i + 1,

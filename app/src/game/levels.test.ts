@@ -27,10 +27,12 @@ describe('levels', () => {
     expect(l2.predGap[1]).toBeLessThan(12)
   })
 
-  it('levels 1 and 2 are built; the rest are coming soon', () => {
+  it('levels 1 to 3 are built; the rest are coming soon', () => {
     expect(playable(1)).toBe(true)
     expect(playable(2)).toBe(true)
-    expect(playable(3)).toBe(false)
+    expect(playable(3)).toBe(true)
+    expect(level(3).look!.eels).toBe(true)
+    expect(playable(4)).toBe(false)
     expect(level(99).n).toBe(20)
   })
 })
