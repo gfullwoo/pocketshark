@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Platform, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { HomeReef } from './src/screens/HomeReef'
+import { SeaMap } from './src/screens/SeaMap'
 import { IntroStory } from './src/story/IntroStory'
 import { colors } from './src/theme'
 
@@ -17,19 +18,20 @@ function previewStart(): number | null {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<'loading' | 'story' | 'reef'>('loading')
+  const [screen, setScreen] = useState<'loading' | 'story' | 'map' | 'reef'>('loading')
   const [startAt] = useState(previewStart)
 
   useEffect(() => {
     if (startAt != null) { setScreen('story'); return }
     AsyncStorage.getItem(STORY_SEEN)
-      .then((v) => setScreen(v ? 'reef' : 'story'))
+      .then((v) => setScreen(v ? 'map' : 'story'))
       .catch(() => setScreen('story'))
   }, [startAt])
 
   const finishStory = () => {
     void AsyncStorage.setItem(STORY_SEEN, '1').catch(() => {})
-    setScreen('reef')
+    // the game starts on the sea map, at level 1
+    setScreen('map')
   }
 
   return (
@@ -37,7 +39,8 @@ export default function App() {
       <StatusBar style="light" />
       {screen === 'loading' && <View style={{ flex: 1, backgroundColor: colors.abyss }} />}
       {screen === 'story' && <IntroStory onDone={finishStory} startAt={startAt ?? 0} />}
-      {screen === 'reef' && <HomeReef onWatchStory={() => setScreen('story')} />}
+      {screen === 'map' && <SeaMap onPlay={() => setScreen('reef')} />}
+      {screen === 'reef' && <HomeReef onWatchStory={() => setScreen('story')} onOpenMap={() => setScreen('map')} />}
     </SafeAreaProvider>
   )
 }

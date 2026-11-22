@@ -6,6 +6,7 @@ short sound effects. Original, in the same chiptune style as the story music.
   assets/music/reef-loop.m4a   gentle loop (F major, 84 BPM, 16 bars, ~46 s)
   assets/music/danger-loop.m4a submarine hunting: drone, heartbeat, sonar (D minor, 96 BPM, 8 bars, 20 s)
   assets/sfx/captured.wav      caught in the spotlight
+  assets/sfx/friend.wav        a friend found you
   assets/sfx/eat-krill*.wav    small prey: chomp, gulp and bubbles (3 pitches)
   assets/sfx/eat-shrimp.wav    crunchy pop
   assets/sfx/eat-gold.wav      sparkly chime
@@ -312,6 +313,20 @@ def sfx_captured():
     return finish(tr.buf)
 
 
+def sfx_friend():
+    """A friend found you: a warm rising arpeggio and a sparkly chord (F major)."""
+    tr = Track(1.8)
+    for i, m in enumerate([65, 69, 72, 77, 81]):  # F A C F A
+        w = tone('pulse', hz(m), 0.18, duty=0.25, extra=0.25)
+        tr.add(i * 0.09, lowpass(w * adsr(len(w), 0.005, 0.05, 0.7, 0.2, 0.18), 0.3), 0.32)
+    for m in (77, 81, 84, 89):
+        b = tone('bell', hz(m), 0.9, extra=0.4)
+        tr.add(0.5, b * decay(len(b), 2.8), 0.16)
+    bass = tone('tri', hz(41), 0.6, extra=0.2)
+    tr.add(0.5, bass * adsr(len(bass), 0.01, 0.2, 0.6, 0.3, 0.6), 0.3)
+    return finish(tr.buf)
+
+
 def write_m4a(dest, x):
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -328,6 +343,7 @@ def main():
         write_wav(p, x)
         print('wrote', os.path.normpath(p))
     write_wav(os.path.join(ASSETS, 'sfx', 'captured.wav'), sfx_captured())
+    write_wav(os.path.join(ASSETS, 'sfx', 'friend.wav'), sfx_friend())
     write_m4a(os.path.join(ASSETS, 'music', 'reef-loop.m4a'), reef_loop())
     write_m4a(os.path.join(ASSETS, 'music', 'danger-loop.m4a'), danger_loop())
 

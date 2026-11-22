@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { hitCircles, touches, type Pred, type PredKind } from './predators'
 import { World } from './world'
 import { subLamp } from './submarine'
+import { PLAYER_LOOK } from './pocketShark'
 
 const W = 390, H = 844
 
@@ -365,5 +366,46 @@ describe('research submarine', () => {
     expect(w.sub).toBeNull()
     expect(w.danger).toBe(false)
     expect(t).toBeGreaterThan(6)
+  })
+})
+
+describe('levels and friends', () => {
+  it('level 2 is harder: predators come sooner and swim faster', () => {
+    const run = (n: number) => {
+      const w = makeWorld(), h = hooks()
+      w.setLevel(n)
+      const p = w.spawnPredator('shark')
+      w.pred = p
+      const x0 = p.x
+      placeShark(w, W / 2, 20)
+      w.update(0.1, false, false, h)
+      return Math.abs(w.pred!.x - x0)
+    }
+    expect(run(2)).toBeGreaterThan(run(1) * 1.05)
+  })
+
+  it('a friend swims in, they meet with hearts, and no predators come meanwhile', () => {
+    const w = makeWorld(), h = { ...hooks(), onFriendMet: vi.fn() }
+    w.pred = null
+    placeShark(w, W * 0.3, w.SH * 0.5)
+    w.summonFriend(PLAYER_LOOK)
+    let t = 0
+    while (!w.friend!.met && t < 8) { w.update(1 / 30, false, false, h); t += 1 / 30 }
+    expect(w.friend!.met).toBe(true)
+    expect(h.onFriendMet).toHaveBeenCalledTimes(1)
+    for (let i = 0; i < 30 * 20; i++) w.update(1 / 30, false, false, h)
+    expect(w.pred).toBeNull()
+    expect(w.sub).toBeNull()
+    // the friend stays close by
+    expect(Math.hypot(w.friend!.x - w.shark.x, w.friend!.y - w.shark.y)).toBeLessThan(w.size() * 2)
+  })
+
+  it('setting a level clears the friend and calm', () => {
+    const w = makeWorld()
+    w.summonFriend(PLAYER_LOOK)
+    w.setLevel(2)
+    expect(w.friend).toBeNull()
+    expect(w.calm).toBe(false)
+    expect(w.look.kelp.extra).toBeGreaterThan(0)
   })
 })

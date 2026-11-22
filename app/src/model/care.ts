@@ -21,6 +21,12 @@ export interface CareState {
   lastCheckIn: string // local YYYY-MM-DD of the last daily check-in bonus
   happySeconds: number // time in the happy zone not yet paid out as GP
   stats: { eaten: number; dodges: number; scares: number; captures?: number; continues?: number }
+  /** Sea map progress: the place the shark is in now (1–20). */
+  level: number
+  /** Points earned in this place (eating and dodging) toward finding a friend. */
+  levelGp: number
+  /** Friends found, each living in the place where they met. */
+  friends: { level: number; name: string }[]
 }
 
 export interface Ctx {
@@ -71,6 +77,7 @@ export function newShark(now: number): CareState {
   return {
     v: 2, health: 90, glow: 100, gp: 0, resting: false,
     lastSeen: now, lastCheckIn: '', happySeconds: 0, stats: { eaten: 0, dodges: 0, scares: 0 },
+    level: 1, levelGp: 0, friends: [],
   }
 }
 
@@ -89,6 +96,9 @@ export function migrate(raw: unknown, now: number): CareState | null {
     lastCheckIn: typeof s.lastCheckIn === 'string' ? s.lastCheckIn : '',
     happySeconds: typeof s.happySeconds === 'number' ? s.happySeconds : 0,
     stats: s.stats ?? base.stats,
+    level: typeof s.level === 'number' && s.level >= 1 ? Math.floor(s.level) : 1,
+    levelGp: typeof s.levelGp === 'number' ? s.levelGp : 0,
+    friends: Array.isArray(s.friends) ? s.friends : [],
   }
 }
 
@@ -143,6 +153,7 @@ export function eat(s: CareState, kind: Snack): number {
   s.health = clamp(s.health + k.health)
   s.glow = clamp(s.glow + k.glow)
   s.gp += k.gp
+  s.levelGp += k.gp
   if (k.health > 0) s.stats.eaten++
   return k.gp
 }
@@ -172,8 +183,29 @@ export function continueAfterCapture(s: CareState) {
 /** Got past a predator without being touched: a small reward. */
 export function dodge(s: CareState): number {
   s.gp += RULES.dodgeGp
+  s.levelGp += RULES.dodgeGp
   s.stats.dodges++
   return RULES.dodgeGp
+}
+
+/** Has the shark earned enough in this place for a friend to find it? */
+export function friendDue(s: CareState, goal: number) {
+  return s.levelGp >= goal && !s.friends.some((f) => f.level === s.level)
+}
+
+/**
+ * The friend makes this place its home and the pocket shark swims on to the
+ * next place on the sea map (points for the new place start at 0).
+ */
+export function moveOn(s: CareState, friendName: string, lastLevel: number) {
+  if (!s.friends.some((f) => f.level === s.level)) s.friends.push({ level: s.level, name: friendName })
+  s.level = Math.min(lastLevel, s.level + 1)
+  s.levelGp = 0
+}
+
+/** The friend stays here, but the next place isn't built yet: keep playing here. */
+export function befriend(s: CareState, friendName: string) {
+  if (!s.friends.some((f) => f.level === s.level)) s.friends.push({ level: s.level, name: friendName })
 }
 
 export function localDay(ms: number): string {

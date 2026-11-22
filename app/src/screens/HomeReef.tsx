@@ -9,7 +9,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
 import { paintBackdrop, paintScenery } from '../game/scenery'
 import { World } from '../game/world'
-import { captured, catchUp, checkIn, continueAfterCapture, dodge, eat, mood, need, newShark, scare, tick, type AwaySummary, type CareState, type Mood } from '../model/care'
+import { befriend, captured, catchUp, checkIn, continueAfterCapture, dodge, eat, friendDue, mood, moveOn, need, newShark, scare, tick, type AwaySummary, type CareState, type Mood } from '../model/care'
+import { level, LEVEL_COUNT, playable } from '../game/levels'
+import { friendLook } from '../game/pocketShark'
 import { loadCare, saveCare } from '../model/storage'
 import { colors } from '../theme'
 
@@ -27,17 +29,26 @@ const AWAY_CARD_SECONDS = 10 * 60
 const CONTROLS_HEIGHT = 170
 
 interface Hud {
-  glow: number; health: number; gp: number
+  glow: number; health: number; gp: number; levelGp: number
+  /** The place on the sea map, and whether its friend has been found. */
+  n: number; found: boolean
   mood: Mood | 'scared'; need: string; glowOn: boolean; atHome: boolean
 }
 
-type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number } | { kind: 'caught' }
+type Card = { kind: 'intro' } | { kind: 'away'; sum: AwaySummary; bonus: number } | { kind: 'caught' } | { kind: 'friend' }
 
 const MOOD_LABEL: Record<Mood | 'scared', string> = {
   scared: 'Scared', happy: 'Happy', content: 'Content', hungry: 'Hungry', resting: 'Resting',
 }
 
-export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
+/** The level the shark swims in: its saved place, or the highest place that's built so far. */
+function builtLevel(n: number) {
+  let k = n
+  while (k > 1 && !playable(k)) k--
+  return k
+}
+
+export function HomeReef({ onWatchStory, onOpenMap }: { onWatchStory?: () => void; onOpenMap?: () => void }) {
   const insets = useSafeAreaInsets()
   const [picture, setPicture] = useState<SkPicture | null>(null)
   const world = useRef(new World())
@@ -55,10 +66,18 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
   const [card, setCard] = useState<Card | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const paused = useRef(false)
-  const isPaused = menuOpen || card?.kind === 'caught'
+  const isPaused = menuOpen || card?.kind === 'caught' || card?.kind === 'friend'
   useEffect(() => { paused.current = isPaused }, [isPaused])
 
   const showToast = useCallback((m: string, c?: string) => setToast({ m, c, id: Date.now() }), [])
+
+  /** Paint this place's landscape (rock, coral, kelp colors) for the current size. */
+  const paintPlace = useCallback(() => {
+    const w = world.current, { W } = size.current
+    if (W <= 0) return
+    scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH, w.look))
+    backdrop.current = record(W, w.SH, makeFont, (ctx) => paintBackdrop(ctx, W, w.SH, w.look))
+  }, [])
 
   // Load the saved shark, catch up on time away, and pay the daily check-in.
   const wake = useCallback((s: CareState, fresh: boolean) => {
@@ -76,6 +95,12 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       if (!alive) return
       const fresh = s.stats.eaten === 0 && s.lastCheckIn === ''
       care.current = s
+      // swim in the saved place on the sea map
+      const n = builtLevel(s.level), w = world.current
+      w.setLevel(n)
+      const here = s.friends.find((f) => f.level === n)
+      if (here) w.keepFriend(friendLook(level(n).friend.pattern))
+      paintPlace()
       wake(s, fresh)
     })
     const sub = AppState.addEventListener('change', (st) => {
@@ -85,7 +110,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
       else { s.lastSeen = Date.now(); void saveCare(s) }
     })
     return () => { alive = false; sub.remove() }
-  }, [wake])
+  }, [wake, paintPlace])
 
   // Game loop: simulate, apply care rules, record a frame for Skia.
   useEffect(() => {
@@ -114,6 +139,12 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
         setCard({ kind: 'caught' })
       },
+      onFriendMet: () => {
+        playSound('friend')
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+        // a moment to see them meet before the card
+        setTimeout(() => setCard({ kind: 'friend' }), 1400)
+      },
     }
     const frame = () => {
       const now = Date.now()
@@ -124,6 +155,12 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         if (!paused.current) {
           w.update(dt, s.glow > 1, s.resting, hooks)
           tick(s, dt, { atHome: w.atHome(), glowing: w.glowOn && w.gI > 0.3, moving: w.effort })
+          // enough points here: a friend comes looking for the pocket shark
+          const L = level(builtLevel(s.level))
+          if (!w.friend && !w.capture && !s.resting && friendDue(s, L.goal)) {
+            w.summonFriend(friendLook(L.friend.pattern))
+            showToast('Someone is swimming over to you…', '#ffd166')
+          }
         }
         s.lastSeen = now
         const bg = scenery.current, far = backdrop.current
@@ -132,7 +169,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
           hudAt = now
           setDanger(w.danger && !paused.current)
           setHud({
-            glow: s.glow, health: s.health, gp: s.gp,
+            glow: s.glow, health: s.health, gp: s.gp, levelGp: s.levelGp,
+            n: builtLevel(s.level), found: s.friends.some((f) => f.level === builtLevel(s.level)),
             mood: w.scared && !s.resting ? 'scared' : mood(s),
             need: w.scared && !s.resting ? 'Ouch! Hiding in the cave until it feels safe.' : need(s),
             glowOn: w.glowOn, atHome: w.atHome(),
@@ -160,10 +198,8 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
     if (W === size.current.W && H === size.current.H) return
     size.current = { W, H }
     // Keep the seabed (and the home cave) above the Home and Glow buttons.
-    const w = world.current
-    w.resize(W, H, CONTROLS_HEIGHT + insets.bottom)
-    scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH))
-    backdrop.current = record(W, w.SH, makeFont, (ctx) => paintBackdrop(ctx, W, w.SH))
+    world.current.resize(W, H, CONTROLS_HEIGHT + insets.bottom)
+    paintPlace()
   }
 
   const openMenu = () => {
@@ -213,6 +249,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
             <Meter label="Health" value={hud.health} color={colors.pink} />
             <Meter label="Glow" value={hud.glow} color={colors.glow} />
           </View>
+          <FriendMeter levelGp={hud.levelGp} n={hud.n} found={hud.found} />
           <Text style={styles.need}>{hud.need}</Text>
         </View>
       )}
@@ -229,6 +266,7 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
         <GameMenu
           onResume={() => setMenuOpen(false)}
           onWatchStory={onWatchStory ? () => { setMenuOpen(false); onWatchStory() } : undefined}
+          onOpenMap={onOpenMap ? () => { setMenuOpen(false); if (care.current) void saveCare(care.current); onOpenMap() } : undefined}
           onPreviewSound={() => playSound('eat-shrimp')}
         />
       )}
@@ -250,9 +288,73 @@ export function HomeReef({ onWatchStory }: { onWatchStory?: () => void }) {
             setCard({ kind: 'intro' })
           }}
         />
+      ) : card?.kind === 'friend' ? (
+        <FriendCard
+          n={hud?.n ?? 1}
+          onDone={(swimOn) => {
+            const s = care.current
+            const n = builtLevel(s?.level ?? 1), L = level(n)
+            if (s) {
+              if (swimOn) moveOn(s, L.friend.name, LEVEL_COUNT)
+              else befriend(s, L.friend.name)
+              void saveCare(s)
+            }
+            setCard(null)
+            if (swimOn && onOpenMap) onOpenMap()
+            else world.current.calm = false
+          }}
+        />
       ) : card ? (
         <CareCard card={card} onClose={() => setCard(null)} onWatchStory={onWatchStory} />
       ) : null}
+    </View>
+  )
+}
+
+/** Progress toward finding a friend in this place. */
+function FriendMeter({ levelGp, n, found }: { levelGp: number; n: number; found: boolean }) {
+  const L = level(n)
+  const v = Math.min(1, levelGp / L.goal)
+  return (
+    <View style={styles.friendMeter} accessibilityLabel={`Level ${n}, ${L.name}. ${found ? 'Friend found' : `${Math.min(levelGp, L.goal)} of ${L.goal} points to find a friend`}`}>
+      <View style={styles.friendRow}>
+        <Text style={styles.levelName} numberOfLines={1}>Level {n} · {L.name}</Text>
+        <Text style={styles.friendCount}>{found ? `${L.friend.name} lives here` : `${Math.min(levelGp, L.goal)} / ${L.goal}`}</Text>
+      </View>
+      <View style={styles.track}>
+        <View style={[styles.fill, { width: `${Math.max(2, (found ? 1 : v) * 100)}%`, backgroundColor: colors.gold }]} />
+      </View>
+      {!found && <Text style={styles.friendHint}>Earn points to find a friend</Text>}
+    </View>
+  )
+}
+
+/** A friend found the pocket shark: it makes this place its home, and you swim on. */
+function FriendCard({ n, onDone }: { n: number; onDone: (swimOn: boolean) => void }) {
+  const L = level(n), next = n < LEVEL_COUNT ? level(n + 1) : null
+  const canSwimOn = !!next && playable(next.n)
+  const name = L.friend.name
+  return (
+    <View style={styles.scrim}>
+      <View style={[styles.card, styles.friendCard]}>
+        <Text style={[styles.cardTitle, { color: colors.gold }]}>You found a friend!</Text>
+        <Text style={styles.cardText}>Meet <Text style={styles.em}>{name}</Text>. {name} was lonely too, and followed your glow all the way here.</Text>
+        {canSwimOn ? (
+          <>
+            <Text style={styles.cardText}>{name} will make <Text style={styles.em}>{L.name}</Text> their home and look after it. Now you can swim on to <Text style={styles.em}>Level {next!.n}: {next!.name}</Text>. It’s harder there!</Text>
+            <Pressable onPress={() => onDone(true)} style={({ pressed }) => [styles.cardBtn, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+              <Text style={styles.cardBtnText}>Give {name} this home and swim on</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <Text style={styles.cardText}>{name} will make <Text style={styles.em}>{L.name}</Text> their home. The next part of the ocean is still being explored. Coming soon!</Text>
+            <Pressable onPress={() => onDone(false)} style={({ pressed }) => [styles.cardBtn, pressed && { opacity: 0.85 }]} accessibilityRole="button">
+              <Text style={styles.cardBtnText}>Swim with {name}</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
     </View>
   )
 }
@@ -311,7 +413,7 @@ function CaughtCard({ onContinue, onStartOver }: { onContinue: () => void; onSta
   )
 }
 
-function CareCard({ card, onClose, onWatchStory }: { card: Exclude<Card, { kind: 'caught' }>; onClose: () => void; onWatchStory?: () => void }) {
+function CareCard({ card, onClose, onWatchStory }: { card: Exclude<Card, { kind: 'caught' } | { kind: 'friend' }>; onClose: () => void; onWatchStory?: () => void }) {
   return (
     <View style={styles.scrim}>
       <View style={styles.card}>
@@ -385,6 +487,12 @@ const styles = StyleSheet.create({
   toastWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   toast: { color: colors.text, fontSize: 16, fontWeight: '600', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 999, overflow: 'hidden', backgroundColor: 'rgba(6,22,40,0.88)', borderWidth: 1, borderColor: colors.line },
   caughtCard: { borderColor: colors.pink },
+  friendCard: { borderColor: colors.gold },
+  friendMeter: { marginTop: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
+  friendRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5, gap: 8 },
+  levelName: { color: colors.text, fontSize: 14, fontWeight: '700', flexShrink: 1 },
+  friendCount: { color: colors.gold, fontSize: 13, fontWeight: '600' },
+  friendHint: { color: colors.muted, fontSize: 12, marginTop: 4 },
   caughtTitle: { color: colors.pink },
   caughtNote: { fontSize: 14, color: colors.muted, marginTop: 8, textAlign: 'center' },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(2,8,16,0.72)', alignItems: 'center', justifyContent: 'center', padding: 20 },

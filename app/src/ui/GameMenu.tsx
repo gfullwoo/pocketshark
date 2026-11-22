@@ -4,9 +4,10 @@ import { colors } from '../theme'
 import { Slider } from './Slider'
 
 /** The pause menu: music and sound-effect volume, the story, and resume. */
-export function GameMenu({ onResume, onWatchStory, onPreviewSound }: {
+export function GameMenu({ onResume, onWatchStory, onOpenMap, onPreviewSound }: {
   onResume: () => void
   onWatchStory?: () => void
+  onOpenMap?: () => void
   onPreviewSound: () => void
 }) {
   const settings = useSettings()
@@ -25,6 +26,11 @@ export function GameMenu({ onResume, onWatchStory, onPreviewSound }: {
           onRelease={(v) => { if (v > 0) onPreviewSound() }}
         />
 
+        {onOpenMap && (
+          <Pressable onPress={onOpenMap} style={({ pressed }) => [styles.secondary, pressed && { opacity: 0.8 }]} accessibilityRole="button">
+            <Text style={styles.secondaryText}>Sea map</Text>
+          </Pressable>
+        )}
         {onWatchStory && (
           <Pressable onPress={onWatchStory} style={({ pressed }) => [styles.secondary, pressed && { opacity: 0.8 }]} accessibilityRole="button">
             <Text style={styles.secondaryText}>Watch the story</Text>
@@ -43,7 +49,7 @@ const styles = StyleSheet.create({
   card: { width: '100%', maxWidth: 420, padding: 22, borderRadius: 24, backgroundColor: colors.panelSolid, borderWidth: 1, borderColor: colors.line },
   title: { color: colors.text, fontSize: 28, fontWeight: '700' },
   sub: { color: colors.muted, fontSize: 15, marginBottom: 18 },
-  secondary: { minHeight: 50, borderRadius: 999, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  secondary: { minHeight: 50, borderRadius: 999, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   secondaryText: { color: colors.glow, fontSize: 17, fontWeight: '600' },
   primary: { minHeight: 54, borderRadius: 999, backgroundColor: colors.glow, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   primaryText: { color: '#04130a', fontSize: 19, fontWeight: '700' },

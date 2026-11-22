@@ -15,6 +15,7 @@ const SOURCES = {
   'eat-glow': require('../../assets/sfx/eat-glow.wav'),
   hurt: require('../../assets/sfx/hurt.wav'),
   captured: require('../../assets/sfx/captured.wav'),
+  friend: require('../../assets/sfx/friend.wav'),
 } as const
 type Sfx = keyof typeof SOURCES
 

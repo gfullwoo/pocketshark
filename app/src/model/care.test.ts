@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RULES, catchUp, checkIn, dodge, eat, migrate, mood, newShark, scare, tick } from './care'
+import { RULES, catchUp, checkIn, dodge, eat, friendDue, migrate, mood, moveOn, newShark, scare, tick } from './care'
 
 const T0 = new Date(2026, 10, 21, 9, 0).getTime()
 const HOUR = 3600_000
@@ -136,5 +136,35 @@ describe('saved games from the earlier version', () => {
     expect(s.health).toBe(40) // a hungry old shark starts lower, not at full health
     expect('fullness' in s).toBe(false)
     expect(migrate({ nope: true }, T0)).toBeNull()
+  })
+})
+
+describe('sea map progress', () => {
+  it('counts points from eating and dodging toward this place, and a friend comes at the goal', () => {
+    const s = newShark(T0)
+    expect(s.level).toBe(1)
+    eat(s, 'gold'); eat(s, 'shrimp'); dodge(s)
+    expect(s.levelGp).toBe(18)
+    expect(friendDue(s, 150)).toBe(false)
+    s.levelGp = 150
+    expect(friendDue(s, 150)).toBe(true)
+  })
+
+  it('the friend keeps this place and the shark moves on with points starting over', () => {
+    const s = newShark(T0)
+    s.levelGp = 160; s.gp = 300
+    moveOn(s, 'Pip', 20)
+    expect(s.friends).toEqual([{ level: 1, name: 'Pip' }])
+    expect(s.level).toBe(2)
+    expect(s.levelGp).toBe(0)
+    expect(s.gp).toBe(300) // Glow Points are kept
+    expect(friendDue(s, 180)).toBe(false)
+  })
+
+  it('old saves start on level 1 with no friends', () => {
+    const s = migrate({ v: 2, health: 80, glow: 50, gp: 20 }, T0)!
+    expect(s.level).toBe(1)
+    expect(s.levelGp).toBe(0)
+    expect(s.friends).toEqual([])
   })
 })

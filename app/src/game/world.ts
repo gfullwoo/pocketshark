@@ -8,7 +8,9 @@
 // but touching ANY part of one is a catch: a scare that sends it darting home.
 import type { Snack } from '../model/care'
 import type { Ctx2D } from './ctx2d'
-import { drawBeam, drawSonar, drawSub, inBeam, SPOT_SECONDS, subLamp, type Sub } from './submarine'
+import { drawBeam, drawSonar, drawSub, inBeam, subLamp, type Sub } from './submarine'
+import { level as levelDef, type Difficulty, type Look } from './levels'
+import { drawPocketShark, PLAYER_LOOK, type SharkLook } from './pocketShark'
 import { drawPredator, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
@@ -20,6 +22,8 @@ export interface WorldHooks {
   onToast(msg: string, color?: string): void
   /** The research submarine caught the pocket shark: the game is over (the screen offers Continue). */
   onCaptured?(): void
+  /** A friend found the pocket shark (the level's goal was reached). */
+  onFriendMet?(): void
 }
 
 type Kind = Snack
@@ -57,6 +61,15 @@ function pickPredator(): PredKind {
   return r < 0.45 ? 'shark' : r < 0.8 ? 'squid' : 'crab'
 }
 
+/** A little heart shape (drawn, so it doesn't depend on the font). */
+function drawHeart(ctx: Ctx2D, x: number, y: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x, y + r * 0.9)
+  ctx.bezierCurveTo(x - r * 1.4, y - r * 0.1, x - r * 0.7, y - r * 1.2, x, y - r * 0.45)
+  ctx.bezierCurveTo(x + r * 0.7, y - r * 1.2, x + r * 1.4, y - r * 0.1, x, y + r * 0.9)
+  ctx.closePath(); ctx.fill()
+}
+
 export class World {
   W = 1
   H = 1
@@ -88,6 +101,13 @@ export class World {
   /** The research submarine, while it's crossing the reef. */
   sub: Sub | null = null
   nextSub = rnd(25, 40)
+  /** This place's difficulty and look (see levels.ts). */
+  diff: Difficulty = levelDef(1).diff
+  look: Look = levelDef(1).look!
+  /** A friend who has come to find the pocket shark (see summonFriend). */
+  friend: { x: number; y: number; dir: number; tilt: number; look: SharkLook; met: boolean; t: number } | null = null
+  /** No new predators or submarines (a friend is on the way). */
+  calm = false
   /** Being pulled up into the submarine (seconds since the catch), then caught for good. */
   capture: { t: number; x: number; y: number; done: boolean } | null = null
   /** The sub is hunting: the music turns scary. */
@@ -112,7 +132,7 @@ export class World {
     }
   }
 
-  private preyTarget() { return Math.round(6 + (this.W * this.H) / 60000) }
+  private preyTarget() { return Math.round((6 + (this.W * this.H) / 60000) * this.diff.preyCount) }
   size() { return Math.max(52, Math.min(90, Math.min(this.W, this.H) * 0.16)) }
   private lureR() { return Math.min(this.W, this.H) * 0.42 }
   private maxSpeed() { return Math.max(158, Math.min(this.W, this.H) * 0.5625) }
@@ -171,7 +191,7 @@ export class World {
       y = rnd(80, this.SH * 0.8)
     }
     const a = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-0.8, 0.8)
-    return { k, x, y, a, vx: Math.cos(a) * K.spd, vy: Math.sin(a) * K.spd, ph: Math.random() * 6, lit: 0, variant: Math.floor(Math.random() * 2) }
+    return { k, x, y, a, vx: Math.cos(a) * (K.spd * this.diff.preySpeed), vy: Math.sin(a) * (K.spd * this.diff.preySpeed), ph: Math.random() * 6, lit: 0, variant: Math.floor(Math.random() * 2) }
   }
 
   spawnPredator(kind: PredKind): Pred {
@@ -384,7 +404,7 @@ export class World {
     const { W, SH } = this
     if (!this.sub) {
       this.nextSub -= dt
-      if (this.nextSub > 0 || resting || this.pred) return
+      if (this.nextSub > 0 || resting || this.pred || this.calm) return
       const s = Math.min(W, this.H) * 0.42 + 20, dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1
       this.sub = { x: dir > 0 ? -s * 0.7 : W + s * 0.7, y: SH * 0.3, dir, s, beam: Math.PI / 2, spot: 0, hunt: false, ph: 0, stop: 0 }
       return
@@ -405,7 +425,7 @@ export class World {
     sb.x += sb.dir * (W * 0.08 + 22) * (sb.hunt ? 0.55 : 1) * dt
     // caught in the light?
     const lit = !home && !resting && inBeam(sb, SH, this.shark.x, this.shark.y, sz * 0.3)
-    sb.spot = Math.max(0, Math.min(1, sb.spot + (lit ? dt / SPOT_SECONDS : -dt / 0.6)))
+    sb.spot = Math.max(0, Math.min(1, sb.spot + (lit ? dt / this.diff.spotSeconds : -dt / 0.6)))
     if (sb.spot >= 1) {
       this.capture = { t: 0, x: this.shark.x, y: this.shark.y, done: false }
       this.glowOn = false
@@ -416,7 +436,7 @@ export class World {
     }
     if (sb.x < -sb.s * 0.8 || sb.x > W + sb.s * 0.8) {
       this.sub = null
-      this.nextSub = rnd(60, 100)
+      this.nextSub = rnd(...this.diff.subGap)
     }
   }
 
@@ -447,9 +467,9 @@ export class World {
   release() {
     this.capture = null
     this.sub = null
-    this.nextSub = rnd(60, 100)
+    this.nextSub = rnd(...this.diff.subGap)
     this.pred = null
-    this.nextPred = rnd(6, 12)
+    this.nextPred = rnd(...this.diff.predGap)
     const h = this.home()
     this.shark.x = h.x
     this.shark.y = h.y
@@ -498,6 +518,7 @@ export class World {
     this.t += dt
     this.updateCamera(dt)
     if (this.capture) { this.updateCapture(dt, hooks); return }
+    this.updateFriend(dt, hooks)
     if (this.fleeT > 0) this.fleeT -= dt
     if (this.scaredT > 0) this.scaredT -= dt
     const auto = resting || this.scared || this.homing
@@ -559,25 +580,25 @@ export class World {
       if (this.gI > 0.3 && d < R) {
         // Lured in, but wary: they circle just out of reach, so the shark has to
         // lunge its mouth onto one rather than wait for it to swim in.
-        const ring = s * 0.8, v = K.spd + 40 * this.gI, ux = dx / d, uy = dy / d
-        const vr = Math.max(-v, Math.min(v, (d - ring) * 3)), vt = K.spd * 0.7 * (p.variant ? 1 : -1)
+        const ring = s * 0.8, v = (K.spd * this.diff.preySpeed) + 40 * this.gI, ux = dx / d, uy = dy / d
+        const vr = Math.max(-v, Math.min(v, (d - ring) * 3)), vt = (K.spd * this.diff.preySpeed) * 0.7 * (p.variant ? 1 : -1)
         // and they dart away from an open mouth coming at them
         const mx = p.x - mouth.x, my = p.y - mouth.y, md = Math.hypot(mx, my) || 1, near = s * 0.75
-        const dart = md < near ? K.spd * 2.2 * (1 - md / near) : 0
+        const dart = md < near ? (K.spd * this.diff.preySpeed) * 2.2 * (1 - md / near) : 0
         const f = Math.min(1, dt * 2.6)
         p.vx += (ux * vr - uy * vt + (mx / md) * dart - p.vx) * f
         p.vy += (uy * vr + ux * vt + (my / md) * dart - p.vy) * f
         p.lit = 1
       } else if (this.gI < 0.3 && d < R * 0.7 && !resting) {
-        const away = Math.atan2(-dy, -dx), v = K.spd + 130 * (1 - d / (R * 0.7)) + 40, f = Math.min(1, dt * 3.5)
+        const away = Math.atan2(-dy, -dx), v = (K.spd * this.diff.preySpeed) + 130 * (1 - d / (R * 0.7)) + 40, f = Math.min(1, dt * 3.5)
         p.vx += (Math.cos(away) * v - p.vx) * f
         p.vy += (Math.sin(away) * v - p.vy) * f
         p.a = away
         p.lit = Math.max(0, p.lit - dt)
       } else {
         p.a += rnd(-1, 1) * dt * 1.5
-        p.vx += (Math.cos(p.a) * K.spd - p.vx) * Math.min(1, dt)
-        p.vy += (Math.sin(p.a) * K.spd - p.vy) * Math.min(1, dt)
+        p.vx += (Math.cos(p.a) * (K.spd * this.diff.preySpeed) - p.vx) * Math.min(1, dt)
+        p.vy += (Math.sin(p.a) * (K.spd * this.diff.preySpeed) - p.vy) * Math.min(1, dt)
         p.lit = Math.max(0, p.lit - dt)
       }
       p.x += p.vx * dt
@@ -600,15 +621,16 @@ export class World {
 
     // ---- predators (none new while the sub is around) ----
     this.nextPred -= dt
-    if (!this.pred && this.nextPred <= 0 && !resting && !this.sub) {
+    if (!this.pred && this.nextPred <= 0 && !resting && !this.sub && !this.calm) {
       const kind = pickPredator()
       this.pred = kind !== 'crab' && Math.random() < 0.5 ? this.spawnFromBackground(kind) : this.spawnPredator(kind)
     }
     const pr = this.pred
+    const pdt = dt * this.diff.predSpeed // predators move faster in harder places
     if (pr) {
-      if (pr.deep) this.updateDeep(pr, dt, home, resting, hooks)
+      if (pr.deep) this.updateDeep(pr, pdt, home, resting, hooks)
       else {
-        pr.ph += dt * (pr.kind === 'squid' ? 3.2 : 4)
+        pr.ph += pdt * (pr.kind === 'squid' ? 3.2 : 4)
         const d = Math.hypot(pr.x - this.shark.x, pr.y - this.shark.y)
         pr.minD = Math.min(pr.minD, d)
         if (pr.kind === 'shark') {
@@ -617,14 +639,14 @@ export class World {
             pr.hunt = true
           } else if (pr.hunt && (this.gI < 0.2 || !ahead || home)) pr.hunt = false
           const sc = pr.s / 230
-          if (pr.hunt) pr.y += (this.shark.y - 10 * sc - pr.y) * Math.min(1, dt * 2.4)
-          pr.x += pr.dir * (W * 0.3 + 110) * (pr.hunt ? 1.4 : 1) * dt
+          if (pr.hunt) pr.y += (this.shark.y - 10 * sc - pr.y) * Math.min(1, pdt * 2.4)
+          pr.x += pr.dir * (W * 0.3 + 110) * (pr.hunt ? 1.4 : 1) * pdt
           const m = sharkMouth(pr), dm = Math.hypot(m.x - this.shark.x, m.y - this.shark.y)
-          pr.open += ((pr.hunt && dm < pr.s * 0.45 ? 1 : 0) - pr.open) * Math.min(1, dt * 8)
+          pr.open += ((pr.hunt && dm < pr.s * 0.45 ? 1 : 0) - pr.open) * Math.min(1, pdt * 8)
         } else if (pr.kind === 'squid') {
-          this.updateSquid(pr, dt, d, home, hooks)
+          this.updateSquid(pr, pdt, d, home, hooks)
         } else {
-          this.updateCrab(pr, dt, home, hooks)
+          this.updateCrab(pr, pdt, home, hooks)
         }
         // any touch with any part of the predator is a catch (home is safe)
         if (!pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
@@ -637,7 +659,7 @@ export class World {
             hooks.onToast(home ? 'Safe at home! +5' : 'Great dodging! +5', '#7dff9a')
           }
           this.pred = null
-          this.nextPred = rnd(6, 12)
+          this.nextPred = rnd(...this.diff.predGap)
         }
       }
     }
@@ -660,7 +682,7 @@ export class World {
   draw(ctx: Ctx2D, scenery: () => void, resting: boolean, backdrop?: () => void) {
     const { W, H, t } = this
     const g = ctx.createLinearGradient(0, 0, 0, H)
-    g.addColorStop(0, '#0b2742'); g.addColorStop(0.5, '#06172b'); g.addColorStop(1, '#020812')
+    g.addColorStop(0, this.look.water[0]); g.addColorStop(0.5, this.look.water[1]); g.addColorStop(1, this.look.water[2])
     ctx.fillStyle = g
     ctx.fillRect(0, 0, W, H)
     const ray = ctx.createLinearGradient(0, 0, 0, H * 0.75)
@@ -685,7 +707,7 @@ export class World {
     ctx.fillStyle = '#030b16'
     ctx.fillRect(0, this.SH - 2, W, H - this.SH + 2)
     scenery()
-    drawKelp(ctx, W, this.SH, t)
+    drawKelp(ctx, W, this.SH, t, this.look)
     if (this.gI > 0.01) {
       const R = this.lureR() * (0.4 + 0.6 * this.gI), { x, y } = this.shark
       const h = ctx.createRadialGradient(x, y, 0, x, y, R)
@@ -699,6 +721,7 @@ export class World {
     for (const p of this.prey) if (p.eat === undefined) this.drawPrey(ctx, p)
     ctx.save()
     if (this.atHome()) ctx.globalAlpha = 0.75
+    this.drawFriend(ctx)
     this.drawShark(ctx, resting)
     ctx.restore()
     // snacks being gulped are drawn over the open mouth
@@ -713,7 +736,11 @@ export class World {
     }
     ctx.globalAlpha = 1
     ctx.font = '600 18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    for (const f of this.floats) { ctx.globalAlpha = Math.max(0, Math.min(1, f.l)); ctx.fillStyle = f.c; ctx.fillText(f.txt, f.x, f.y) }
+    for (const f of this.floats) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.l)); ctx.fillStyle = f.c
+      if (f.txt === '\u2665') drawHeart(ctx, f.x, f.y - 6, 7)
+      else ctx.fillText(f.txt, f.x, f.y)
+    }
     ctx.globalAlpha = 1
     ctx.restore()
     const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.75)
@@ -761,60 +788,91 @@ export class World {
   }
 
   private drawShark(ctx: Ctx2D, resting: boolean) {
-    const sc = this.size() / 80, { t, gI, mouth } = this
-    ctx.save()
     const shrink = this.capture ? 1 - 0.65 * Math.min(1, this.capture.t / 1.3) : 1 // pulled up into the sub
-    ctx.translate(this.shark.x, this.shark.y); ctx.rotate(this.shark.tilt); ctx.scale(this.shark.dir * sc * shrink, sc * shrink)
     const scared = (this.scared || !!this.capture) && !resting
-    ctx.translate(scared ? Math.sin(t * 55) * 0.9 : 0, Math.sin(t * (resting ? 1 : 3)) * 2) // trembles when scared
-    const wag = Math.sin(t * (resting ? 2 : 8)) * 3
-    ctx.fillStyle = '#6f7b88'
-    ctx.beginPath(); ctx.moveTo(-36, -3); ctx.lineTo(-56, -17 + wag); ctx.quadraticCurveTo(-50, -2, -55, 9 + wag); ctx.lineTo(-36, 4); ctx.closePath(); ctx.fill()
-    ctx.beginPath(); ctx.moveTo(-2, -13); ctx.quadraticCurveTo(-8, -25, -15, -11); ctx.closePath(); ctx.fill()
-    ctx.beginPath(); ctx.moveTo(-20, -9); ctx.quadraticCurveTo(-25, -19, -30, -6); ctx.closePath(); ctx.fill()
-    const bg = ctx.createLinearGradient(0, -16, 0, 16)
-    bg.addColorStop(0, '#aeb9c4'); bg.addColorStop(1, '#64707d')
-    ctx.fillStyle = bg
-    ctx.beginPath(); ctx.moveTo(33, 1); ctx.bezierCurveTo(33, -14, 16, -17, -2, -14); ctx.bezierCurveTo(-18, -11, -30, -6, -40, -3)
-    ctx.lineTo(-40, 4); ctx.bezierCurveTo(-30, 8, -16, 14, 0, 15); ctx.bezierCurveTo(18, 16, 33, 14, 33, 1); ctx.closePath(); ctx.fill()
-    ctx.fillStyle = 'rgba(228,238,248,.55)'
-    for (const [x, y] of [[6, -11], [-6, -10], [-17, -7], [-27, -4], [0, -6], [-12, -4]]) { ctx.beginPath(); ctx.arc(x, y, 1.3, 0, TAU); ctx.fill() }
-    ctx.strokeStyle = 'rgba(40,50,60,.6)'; ctx.lineWidth = 1.2
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(11 - i * 3.5, -3); ctx.lineTo(10 - i * 3.5, 5); ctx.stroke() }
-    ctx.save()
-    ctx.shadowColor = '#7dff9a'; ctx.shadowBlur = 6 + gI * 26; ctx.fillStyle = `rgba(125,255,154,${0.35 + gI * 0.65})`
-    ctx.beginPath(); ctx.ellipse(1, 8, 4.5, 2.4, -0.2, 0, TAU); ctx.fill()
-    ctx.restore()
-    ctx.fillStyle = '#7a8693'
-    ctx.beginPath(); ctx.moveTo(8, 10); ctx.quadraticCurveTo(4, 24, -4, 17); ctx.quadraticCurveTo(-1, 12, 8, 10); ctx.closePath(); ctx.fill()
-    if (resting) {
-      // closed, sleepy eye
-      ctx.strokeStyle = '#0b1118'; ctx.lineWidth = 1.6
-      ctx.beginPath(); ctx.arc(21, -5, 3.2, 0.2, Math.PI - 0.2); ctx.stroke()
-    } else if (scared) {
-      // wide, worried eye with a tiny pupil, a sad brow and a tear
-      ctx.fillStyle = '#f4f8fc'; ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1
-      ctx.beginPath(); ctx.ellipse(21, -4, 5.6, 6.2, 0, 0, TAU); ctx.fill(); ctx.stroke()
-      ctx.fillStyle = '#0b1118'; ctx.beginPath(); ctx.arc(21.5, -2.6, 2, 0, TAU); ctx.fill()
-      ctx.lineWidth = 2.2; ctx.lineCap = 'round'
-      ctx.beginPath(); ctx.moveTo(15.5, -11.5); ctx.quadraticCurveTo(21, -15.5, 26.5, -15); ctx.stroke() // sad, raised brow
-      ctx.lineCap = 'butt'
-      const drip = (t * 0.9) % 1
-      ctx.fillStyle = `rgba(150,215,255,${0.95 * (1 - drip * 0.7)})`
-      ctx.beginPath(); ctx.moveTo(18, 2 + drip * 12); ctx.quadraticCurveTo(15.8, 6 + drip * 12, 18, 7.4 + drip * 12)
-      ctx.quadraticCurveTo(20.2, 6 + drip * 12, 18, 2 + drip * 12); ctx.fill() // a tear
-      // shiver marks over its head
-      ctx.strokeStyle = 'rgba(190,225,255,.8)'; ctx.lineWidth = 1.4
-      for (const [x, y] of [[4, -22], [12, -25], [20, -23]]) {
-        ctx.beginPath(); ctx.moveTo(x - 2, y + 2); ctx.lineTo(x, y - 2); ctx.lineTo(x + 2, y + 2); ctx.stroke()
-      }
-    } else {
-      ctx.fillStyle = '#0b1118'; ctx.beginPath(); ctx.arc(21, -4, 3.4, 0, TAU); ctx.fill()
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(22.2, -5.2, 1.1, 0, TAU); ctx.fill()
+    const happy = !!this.friend?.met
+    drawPocketShark(ctx, PLAYER_LOOK, {
+      x: this.shark.x, y: this.shark.y, dir: this.shark.dir, tilt: this.shark.tilt,
+      scale: (this.size() / 80) * shrink, t: this.t, glow: this.gI, mouth: this.mouth,
+      mood: resting ? 'resting' : scared ? 'scared' : happy ? 'happy' : 'normal',
+    })
+  }
+
+  // ---------- friends ----------
+  /**
+   * The pocket shark has earned enough here: a friend (in its own color
+   * pattern) swims in from the far side. No new predators or submarines come
+   * while it does. When they meet, hearts burst and `onFriendMet` fires; the
+   * friend then swims along beside the pocket shark.
+   */
+  summonFriend(look: SharkLook) {
+    this.calm = true
+    const fromRight = this.shark.x < this.W / 2
+    this.friend = {
+      x: fromRight ? this.W + 60 : -60, y: Math.max(this.SH * 0.2, Math.min(this.SH * 0.7, this.shark.y)),
+      dir: fromRight ? -1 : 1, tilt: 0, look, met: false, t: 0,
     }
-    if (scared) { ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(26, 10, 4, Math.PI + 0.5, TAU - 0.4); ctx.stroke() } // wobbly frown
-    else if (mouth > 0.05) { ctx.fillStyle = '#2a1a22'; ctx.beginPath(); ctx.ellipse(27, 6, 3, 1 + mouth * 3, 0, 0, TAU); ctx.fill() }
-    else { ctx.strokeStyle = '#2a333d'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(26, 4, 3.5, 0.3, 1.6); ctx.stroke() }
-    ctx.restore()
+  }
+
+  /** A friend who already lives here swims along beside the pocket shark (no greeting, predators as usual). */
+  keepFriend(look: SharkLook) {
+    const s = this.size()
+    this.friend = { x: this.shark.x - s, y: this.shark.y - s * 0.35, dir: this.shark.dir, tilt: 0, look, met: true, t: 0 }
+  }
+
+  private updateFriend(dt: number, hooks: WorldHooks) {
+    const f = this.friend
+    if (!f) return
+    f.t += dt
+    const s = this.size()
+    // swim to the pocket shark; once met, keep alongside it, just behind
+    const tx = f.met ? this.shark.x - this.shark.dir * s * 1.05 : this.shark.x + (f.x > this.shark.x ? s * 0.9 : -s * 0.9)
+    const ty = f.met ? this.shark.y - s * 0.35 + Math.sin(f.t * 2) * 4 : this.shark.y
+    const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy)
+    const sp = f.met ? Math.min(this.maxSpeed() * 1.1, d * 3) : Math.min(this.maxSpeed() * 0.75, 40 + d * 2)
+    if (d > 1) { f.x += (dx / d) * sp * dt; f.y += (dy / d) * sp * dt }
+    if (Math.abs(dx) > 4) f.dir = dx > 0 ? 1 : -1
+    if (f.met && d < 6) f.dir = this.shark.dir
+    f.tilt += (Math.max(-0.4, Math.min(0.4, (dy / Math.max(1, d)) * 0.5)) - f.tilt) * Math.min(1, dt * 5)
+    if (!f.met && Math.hypot(f.x - this.shark.x, f.y - this.shark.y) < s * 1.15) {
+      f.met = true
+      // face each other, hearts all around
+      this.shark.dir = f.x > this.shark.x ? 1 : -1
+      for (let i = 0; i < 7; i++) {
+        this.floats.push({ x: (f.x + this.shark.x) / 2 + rnd(-30, 30), y: (f.y + this.shark.y) / 2 - rnd(10, 40), txt: '\u2665', c: i % 2 ? '#ff8fb1' : '#ffd166', l: 1.4 + Math.random() * 0.8 })
+      }
+      for (let i = 0; i < 18; i++) {
+        const a = Math.random() * TAU, v = rnd(30, 110)
+        this.parts.push({ x: (f.x + this.shark.x) / 2, y: (f.y + this.shark.y) / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, l: 0.8, c: i % 2 ? '#ff8fb1' : '#7dff9a' })
+      }
+      hooks.onFriendMet?.()
+    }
+    // now and then a little heart while they swim together
+    if (f.met && Math.random() < dt * 0.6) {
+      this.floats.push({ x: (f.x + this.shark.x) / 2, y: Math.min(f.y, this.shark.y) - 16, txt: '\u2665', c: '#ff8fb1', l: 1.2 })
+    }
+  }
+
+  private drawFriend(ctx: Ctx2D) {
+    const f = this.friend
+    if (!f) return
+    drawPocketShark(ctx, f.look, {
+      x: f.x, y: f.y, dir: f.dir, tilt: f.tilt, scale: (this.size() / 80) * 0.95, t: this.t + 1.3,
+      glow: f.met ? 0.6 + 0.4 * Math.sin(f.t * 3) : 0.5, mouth: 0, mood: f.met ? 'happy' : 'normal',
+    })
+  }
+
+  /** Switch to a place on the sea map: its difficulty and look, fresh timers, no friend yet. */
+  setLevel(n: number) {
+    const L = levelDef(n)
+    this.diff = L.diff
+    this.look = L.look ?? levelDef(1).look!
+    this.friend = null
+    this.calm = false
+    this.pred = null
+    this.sub = null
+    this.capture = null
+    this.nextPred = 5
+    this.nextSub = rnd(...this.diff.subFirst)
   }
 }

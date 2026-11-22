@@ -4,6 +4,10 @@
 // (pink krill, orange shrimp, gold fish) never get lost against the reef.
 
 import type { Ctx2D } from './ctx2d'
+import { level, type Look } from './levels'
+
+/** The look of level 1 (the original reef), used when no look is given. */
+const DEFAULT_LOOK = level(1).look!
 
 type Ctx = Ctx2D
 const TAU = Math.PI * 2
@@ -28,7 +32,8 @@ export function caveBox(W: number, H: number) {
   return { w, h, top: H - h }
 }
 
-export function paintScenery(c: Ctx, W: number, H: number) {
+export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_LOOK) {
+  setRock(look)
   const r = rng(20261121)
   const between = (a: number, b: number) => a + r() * (b - a)
   const cave = caveBox(W, H)
@@ -39,8 +44,8 @@ export function paintScenery(c: Ctx, W: number, H: number) {
 
   // ---- seabed ----
   const sand = c.createLinearGradient(0, H - 50, 0, H)
-  sand.addColorStop(0, '#0a1a2c')
-  sand.addColorStop(1, '#030b16')
+  sand.addColorStop(0, look.sand[0])
+  sand.addColorStop(1, look.sand[1])
   c.fillStyle = sand
   c.beginPath(); c.moveTo(0, H)
   for (let x = 0; x <= W + 20; x += 20) c.lineTo(x, seabedY(x, H))
@@ -56,7 +61,7 @@ export function paintScenery(c: Ctx, W: number, H: number) {
 
   // ---- coral reef from the cave to the right wall ----
   const scale = Math.max(0.6, Math.min(1.1, W / 700))
-  const palette = ['#7d3f68', '#8c5638', '#4f5e95', '#2f7a6c', '#9a4a5a']
+  const palette = look.coral
   let x = cave.w + between(10, 30)
   let n = 0
   while (x < W - 16) {
@@ -71,12 +76,13 @@ export function paintScenery(c: Ctx, W: number, H: number) {
     else if (kind === 'brain') brain(c, x, base, 26 * s, col)
     else tubes(c, x, base, s, col, r)
     c.restore()
-    x += between(48, 92) * scale
+    x += between(look.coralGap[0], look.coralGap[1]) * scale
     n++
   }
+  if (look.seagrass) paintSeagrass(c, W, H, cave)
   // a smaller reef patch on top of the cave rock
-  branch(c, cave.w * 0.22, cave.top + cave.h * 0.12, 20 * scale, -Math.PI / 2 - 0.2, 3, 4 * scale, '#7d3f68', r)
-  brain(c, cave.w * 0.78, seabedY(cave.w * 0.78, H) - cave.h * 0.18, 14 * scale, '#4f5e95')
+  branch(c, cave.w * 0.22, cave.top + cave.h * 0.12, 20 * scale, -Math.PI / 2 - 0.2, 3, 4 * scale, palette[0], r)
+  brain(c, cave.w * 0.78, seabedY(cave.w * 0.78, H) - cave.h * 0.18, 14 * scale, palette[palette.length > 2 ? 2 : 0])
 }
 
 function branch(c: Ctx, x: number, y: number, len: number, ang: number, depth: number, w: number, col: string, r: () => number) {
@@ -155,7 +161,7 @@ function tubes(c: Ctx, x: number, y: number, s: number, col: string, r: () => nu
 }
 
 /** Kelp sways every frame, so it isn't part of the cached layer. */
-export function drawKelp(c: Ctx, W: number, H: number, t: number) {
+export function drawKelp(c: Ctx, W: number, H: number, t: number, look: Look = DEFAULT_LOOK) {
   const cave = caveBox(W, H)
   const stalks = [
     { x: cave.w * 0.08, h: cave.h * 1.1, ph: 0 },
@@ -163,39 +169,72 @@ export function drawKelp(c: Ctx, W: number, H: number, t: number) {
     { x: Math.min(W - 30, cave.w + (W - cave.w) * 0.55), h: H * 0.32, ph: 3.1 },
     { x: W - 22, h: H * 0.42, ph: 4.4 },
   ]
+  // a kelp forest: extra tall stalks spread across the open water to the right of the cave
+  for (let i = 0; i < look.kelp.extra; i++) {
+    const f = (i + 0.5) / look.kelp.extra
+    const x = cave.w + 24 + f * (W - cave.w - 40) + Math.sin(i * 7.3) * 14
+    stalks.push({ x, h: H * look.kelp.tall * (0.75 + 0.25 * Math.abs(Math.sin(i * 3.1))), ph: i * 1.37 })
+  }
   c.save()
   c.lineCap = 'round'
   for (const k of stalks) {
     const by = seabedY(k.x, H) + 6
     const sway = Math.sin(t * 0.8 + k.ph) * 14
     const tipX = k.x + sway, tipY = by - k.h
-    c.strokeStyle = 'rgba(38,92,72,.75)'
-    c.lineWidth = 4
+    c.strokeStyle = look.kelp.stalk
+    c.lineWidth = look.kelp.bulbs ? 3.5 : 4
     c.beginPath(); c.moveTo(k.x, by)
     c.bezierCurveTo(k.x - 10 + sway * 0.3, by - k.h * 0.35, k.x + 12 + sway * 0.7, by - k.h * 0.7, tipX, tipY)
     c.stroke()
     // leaves along the stalk
-    c.fillStyle = 'rgba(46,110,84,.6)'
-    for (let i = 1; i <= 6; i++) {
-      const f = i / 7
+    c.fillStyle = look.kelp.leaf
+    const leaves = look.kelp.bulbs ? Math.round(5 + k.h / 110) : 6
+    for (let i = 1; i <= leaves; i++) {
+      const f = i / (leaves + 1)
       const lx = k.x + (tipX - k.x) * f + Math.sin(f * 3 + k.ph) * 6, ly = by - k.h * f
       const side = i % 2 ? 1 : -1
       c.beginPath()
-      c.ellipse(lx + side * 9, ly, 11, 4, side * (0.5 + Math.sin(t + i) * 0.15), 0, TAU)
+      if (look.kelp.bulbs) c.ellipse(lx + side * 11, ly + 3, 14, 2.6, side * (0.7 + Math.sin(t + i) * 0.15), 0, TAU) // long, narrow blades
+      else c.ellipse(lx + side * 9, ly, 11, 4, side * (0.5 + Math.sin(t + i) * 0.15), 0, TAU)
       c.fill()
+      if (look.kelp.bulbs) {
+        // giant kelp: a little gas float where each blade meets the stalk
+        c.beginPath(); c.arc(lx + side * 1.5, ly, 1.8, 0, TAU); c.fill()
+      }
     }
   }
   c.restore()
 }
 
 
+/** Short sea grass in clumps along the seabed (kelp forest and meadows). */
+function paintSeagrass(c: Ctx, W: number, H: number, cave: Box) {
+  const r = rng(5150)
+  c.save()
+  c.lineCap = 'round'
+  for (let x = cave.w * 0.95; x < W; x += 9 + r() * 16) {
+    const base = seabedY(x, H) + 4, n = 3 + Math.floor(r() * 4)
+    for (let i = 0; i < n; i++) {
+      const h = 10 + r() * 22, lean = (r() - 0.5) * 10, bx = x + (i - n / 2) * 2.5
+      c.strokeStyle = `rgba(${70 + Math.floor(r() * 40)},${110 + Math.floor(r() * 40)},60,${0.45 + r() * 0.3})`
+      c.lineWidth = 1.6
+      c.beginPath(); c.moveTo(bx, base); c.quadraticCurveTo(bx + lean * 0.3, base - h * 0.6, bx + lean, base - h); c.stroke()
+    }
+  }
+  c.restore()
+}
+
 // ------------------------------------------------------------------ the cave
 type Box = ReturnType<typeof caveBox>
 type Pt = [number, number]
 
-const ROCK_LIGHT = '#2b4258'
-const ROCK_MID = '#172a3d'
-const ROCK_DARK = '#0a1522'
+let ROCK_LIGHT = '#2b4258'
+let ROCK_MID = '#172a3d'
+let ROCK_DARK = '#0a1522'
+/** Use this level's rock colors for the cave and rubble. */
+function setRock(look: Look) {
+  ROCK_LIGHT = look.rock.light; ROCK_MID = look.rock.mid; ROCK_DARK = look.rock.dark
+}
 
 /** Mouth geometry, shared with the world's "at home" check (see World.atHome). */
 function mouthOf(cave: Box, H: number) {
@@ -240,7 +279,7 @@ function paintCave(c: Ctx, W: number, H: number, cave: Box) {
   }
   out.push([cave.w + 46, H])
   const rock = c.createLinearGradient(cave.w * 0.8, cave.top, 0, H)
-  rock.addColorStop(0, '#203549'); rock.addColorStop(0.45, ROCK_MID); rock.addColorStop(1, '#050d18')
+  rock.addColorStop(0, ROCK_LIGHT); rock.addColorStop(0.45, ROCK_MID); rock.addColorStop(1, ROCK_DARK)
   c.fillStyle = rock
   c.beginPath(); c.moveTo(out[0][0], out[0][1])
   for (const p of out.slice(1)) c.lineTo(p[0], p[1])
@@ -291,7 +330,7 @@ function paintCave(c: Ctx, W: number, H: number, cave: Box) {
   // outer lip (rock rim, lit on top)
   const lip = arch(1.22, 3)
   const lipG = c.createLinearGradient(mx, mb - mh * 1.25, mx, mb)
-  lipG.addColorStop(0, '#2f475e'); lipG.addColorStop(0.5, '#1a2d40'); lipG.addColorStop(1, '#0c1826')
+  lipG.addColorStop(0, ROCK_LIGHT); lipG.addColorStop(0.5, ROCK_MID); lipG.addColorStop(1, ROCK_DARK)
   fillPts(lip, lipG)
   c.strokeStyle = 'rgba(160,205,240,.22)'; c.lineWidth = 1.6
   c.beginPath(); c.moveTo(lip[3][0], lip[3][1]); for (const p of lip.slice(4, 16)) c.lineTo(p[0], p[1]); c.stroke()
@@ -358,12 +397,12 @@ function paintCaveRubble(c: Ctx, H: number, cave: Box) {
  * thickens lower down, so the tops dissolve into the water like distant terrain
  * seen through fog. Nearer layers are a little darker and stronger.
  */
-export function paintBackdrop(c: Ctx, W: number, H: number) {
+export function paintBackdrop(c: Ctx, W: number, H: number, look: Look = DEFAULT_LOOK) {
   const layers = [
     // base height (fraction of H), bump size, color, strength, seed
-    { base: 0.78, amp: 0.2, rgb: '24,60,92', a: 0.45, seed: 1.7 },
-    { base: 0.86, amp: 0.15, rgb: '16,44,72', a: 0.6, seed: 4.1 },
-    { base: 0.93, amp: 0.1, rgb: '9,28,48', a: 0.7, seed: 7.3 },
+    { base: 0.78, amp: 0.2, rgb: look.backdrop[0], a: 0.45, seed: 1.7 },
+    { base: 0.86, amp: 0.15, rgb: look.backdrop[1], a: 0.6, seed: 4.1 },
+    { base: 0.93, amp: 0.1, rgb: look.backdrop[2], a: 0.7, seed: 7.3 },
   ]
   for (const L of layers) {
     const pts: Pt[] = []

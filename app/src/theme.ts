@@ -10,4 +10,5 @@ export const colors = {
   glow: '#7dff9a',
   cyan: '#5ce1ff',
   pink: '#ff8fb1',
+  gold: '#ffd166',
 } as const
