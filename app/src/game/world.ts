@@ -184,7 +184,7 @@ export class World {
   }
 
   private spawn(edge: boolean): Prey {
-    const k = pickKind(), K = KINDS[k], { W, H } = this
+    const k = pickKind(), K = KINDS[k], { W } = this
     let x: number, y: number
     if (edge) {
       const side = Math.random() < 0.5
@@ -194,7 +194,7 @@ export class World {
       x = rnd(caveBox(W, this.SH).w, W - 20)
       y = rnd(80, this.SH * 0.8)
     }
-    const a = Math.atan2(H / 2 - y, W / 2 - x) + rnd(-0.8, 0.8)
+    const a = Math.atan2(this.SH / 2 - y, W / 2 - x) + rnd(-0.8, 0.8)
     return { k, x, y, a, vx: Math.cos(a) * (K.spd * this.diff.preySpeed), vy: Math.sin(a) * (K.spd * this.diff.preySpeed), ph: Math.random() * 6, lit: 0, variant: Math.floor(Math.random() * 2) }
   }
 
@@ -608,7 +608,10 @@ export class World {
       }
       p.x += p.vx * dt
       p.y += p.vy * dt
+      // stay in the water the shark can reach: above the seabed, below the very top
       if (p.y > this.SH - 30) p.vy -= 40 * dt
+      if (p.y > this.SH - 18) { p.y = this.SH - 18; p.vy = -Math.abs(p.vy) * 0.6 }
+      if (p.y < 40) { p.y = 40; p.vy = Math.abs(p.vy) * 0.6 }
       // only the mouth catches: it has to actually reach the snack
       const dm = Math.hypot(mouth.x - p.x, mouth.y - p.y)
       if (!resting && !this.scared && dm < s * 0.14 + K.r) {

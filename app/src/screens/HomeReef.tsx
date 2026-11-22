@@ -1,9 +1,9 @@
 import { Canvas, matchFont, Picture, type SkFont, type SkPicture } from '@shopify/react-native-skia'
 import * as Haptics from 'expo-haptics'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, Platform, Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native'
+import { AppState, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native'
 import { eatSound, useReefAudio } from '../game/audio'
-import { GameMenu } from '../ui/GameMenu'
+import { GameMenu, type MenuPlace } from '../ui/GameMenu'
 import { useControls } from '../game/controls'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { record } from '../game/ctx2d'
@@ -27,6 +27,8 @@ const makeFont = (size: number) => {
 const AWAY_CARD_SECONDS = 10 * 60
 /** Space reserved at the bottom for the joystick and Glow button. */
 const CONTROLS_HEIGHT = 170
+/** Sideways phone: the controls sit in the bottom corners, so only a thin strip of floor is kept clear. */
+const CONTROLS_HEIGHT_LANDSCAPE = 26
 
 interface Hud {
   glow: number; health: number; gp: number; levelGp: number
@@ -48,8 +50,10 @@ function builtLevel(n: number) {
   return k
 }
 
-export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; onWatchStory?: () => void; onOpenMap?: () => void }) {
+export function HomeReef({ visit, onWatchStory, onOpenMap, onPickPlace }: { visit?: number; onWatchStory?: () => void; onOpenMap?: () => void; onPickPlace?: (n: number) => void }) {
   const insets = useSafeAreaInsets()
+  const win = useWindowDimensions()
+  const wide = win.width > win.height // sideways: a compact one-row top bar
   const [picture, setPicture] = useState<SkPicture | null>(null)
   const world = useRef(new World())
   const audio = useReefAudio()
@@ -201,14 +205,25 @@ export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; o
     if (W === size.current.W && H === size.current.H) return
     size.current = { W, H }
     // Keep the seabed (and the home cave) above the Home and Glow buttons.
-    world.current.resize(W, H, CONTROLS_HEIGHT + insets.bottom)
+    world.current.resize(W, H, (W > H ? CONTROLS_HEIGHT_LANDSCAPE : CONTROLS_HEIGHT) + insets.bottom)
     paintPlace()
   }
 
+  // places to jump to from the menu: friends' homes and the current place
+  const [menuPlaces, setMenuPlaces] = useState<MenuPlace[]>([])
   const openMenu = () => {
     // let go of the controls so nothing keeps moving behind the menu
     world.current.setStick(0, 0)
     world.current.glowHeld = false
+    const s = care.current
+    if (s) {
+      const cur = builtLevel(s.level), playing = visiting.current ?? cur
+      const list: MenuPlace[] = s.friends
+        .filter((f) => playable(f.level) && f.level !== cur)
+        .map((f) => ({ n: f.level, name: level(f.level).name, note: `Visit ${f.name}`, here: f.level === playing }))
+      list.push({ n: cur, name: level(cur).name, note: s.friends.some((f) => f.level === cur) ? `${level(cur).friend.name} lives here` : 'Your current place', here: cur === playing })
+      setMenuPlaces(list.sort((a, b) => a.n - b.n))
+    }
     setMenuOpen(true)
   }
 
@@ -233,7 +248,26 @@ export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; o
       {hud && controls.render(hud.glowOn)}
 
       {hud && (
-        <View pointerEvents="box-none" style={[styles.hud, { paddingTop: insets.top + 8 }]}>
+        <View pointerEvents="box-none" style={[styles.hud, { paddingTop: insets.top + 8, paddingLeft: 14 + insets.left, paddingRight: 14 + insets.right }]}>
+          {wide ? (
+            <View style={styles.wideRow}>
+              <View style={styles.pill}><Text style={styles.pillLabel}>GP</Text><Text style={styles.pillValue}>{hud.gp}</Text></View>
+              <View style={[styles.meters, styles.wideMeters]}>
+                <Meter label="Health" value={hud.health} color={colors.pink} />
+                <Meter label="Glow" value={hud.glow} color={colors.glow} />
+              </View>
+              <View style={styles.wideFriend}><FriendMeter levelGp={hud.levelGp} n={hud.n} found={hud.found} visiting={hud.visiting} compact /></View>
+              <Pressable
+                onPress={openMenu}
+                style={({ pressed }) => [styles.pill, styles.storyPill, pressed && { opacity: 0.7 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Open the menu"
+              >
+                <Text style={styles.storyPillText}>Menu</Text>
+              </Pressable>
+              <View style={[styles.pill, styles.moodPill, moodStyle(hud.mood)]}><Text style={styles.moodText}>{MOOD_LABEL[hud.mood]}</Text></View>
+            </View>
+          ) : (<>
           <View style={styles.row}>
             <View style={styles.pill}><Text style={styles.pillLabel}>Glow Points</Text><Text style={styles.pillValue}>{hud.gp}</Text></View>
             <View style={styles.rowRight}>
@@ -254,11 +288,12 @@ export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; o
           </View>
           <FriendMeter levelGp={hud.levelGp} n={hud.n} found={hud.found} visiting={hud.visiting} />
           <Text style={styles.need}>{hud.need}</Text>
+          </>)}
         </View>
       )}
 
       {toast && (
-        <View pointerEvents="none" style={[styles.toastWrap, { top: insets.top + 168 }]}>
+        <View pointerEvents="none" style={[styles.toastWrap, { top: insets.top + (wide ? 64 : 168) }]}>
           <Text key={toast.id} style={[styles.toast, toast.c ? { color: toast.c } : null]}>{toast.m}</Text>
         </View>
       )}
@@ -270,6 +305,8 @@ export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; o
           onResume={() => setMenuOpen(false)}
           onWatchStory={onWatchStory ? () => { setMenuOpen(false); onWatchStory() } : undefined}
           onOpenMap={onOpenMap ? () => { setMenuOpen(false); if (care.current) void saveCare(care.current); onOpenMap() } : undefined}
+          places={menuPlaces}
+          onPickPlace={onPickPlace ? (n) => { setMenuOpen(false); if (care.current) void saveCare(care.current); onPickPlace(n) } : undefined}
           onPreviewSound={() => playSound('eat-shrimp')}
         />
       )}
@@ -315,11 +352,11 @@ export function HomeReef({ visit, onWatchStory, onOpenMap }: { visit?: number; o
 }
 
 /** Progress toward finding a friend in this place. */
-function FriendMeter({ levelGp, n, found, visiting }: { levelGp: number; n: number; found: boolean; visiting: boolean }) {
+function FriendMeter({ levelGp, n, found, visiting, compact }: { levelGp: number; n: number; found: boolean; visiting: boolean; compact?: boolean }) {
   const L = level(n)
   const v = Math.min(1, levelGp / L.goal)
   return (
-    <View style={styles.friendMeter} accessibilityLabel={`Level ${n}, ${L.name}. ${found ? 'Friend found' : `${Math.min(levelGp, L.goal)} of ${L.goal} points to find a friend`}`}>
+    <View style={[styles.friendMeter, compact && styles.friendMeterCompact]} accessibilityLabel={`Level ${n}, ${L.name}. ${found ? 'Friend found' : `${Math.min(levelGp, L.goal)} of ${L.goal} points to find a friend`}`}>
       <View style={styles.friendRow}>
         <Text style={styles.levelName} numberOfLines={1}>Level {n} · {L.name}</Text>
         <Text style={styles.friendCount}>{found ? (visiting ? `Visiting ${L.friend.name}` : `${L.friend.name} lives here`) : `${Math.min(levelGp, L.goal)} / ${L.goal}`}</Text>
@@ -327,7 +364,7 @@ function FriendMeter({ levelGp, n, found, visiting }: { levelGp: number; n: numb
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${Math.max(2, (found ? 1 : v) * 100)}%`, backgroundColor: colors.gold }]} />
       </View>
-      {!found && <Text style={styles.friendHint}>Earn points to find a friend</Text>}
+      {!found && !compact && <Text style={styles.friendHint}>Earn points to find a friend</Text>}
     </View>
   )
 }
@@ -473,6 +510,10 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.abyss },
   hud: { position: 'absolute', left: 0, right: 0, top: 0, paddingHorizontal: 14 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  wideRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  wideMeters: { marginTop: 0, paddingVertical: 6, flex: 1.1, flexWrap: 'nowrap' },
+  wideFriend: { flex: 1.2 },
+  friendMeterCompact: { marginTop: 0, paddingVertical: 6 },
   pill: { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 999, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line },
   pillLabel: { color: colors.muted, fontSize: 13 },
   pillValue: { color: colors.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },

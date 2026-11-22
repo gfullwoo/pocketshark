@@ -5,6 +5,7 @@ import { Platform, View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { HomeReef } from './src/screens/HomeReef'
 import { SeaMap } from './src/screens/SeaMap'
+import { loadCare } from './src/model/storage'
 import { IntroStory } from './src/story/IntroStory'
 import { colors } from './src/theme'
 
@@ -22,6 +23,8 @@ export default function App() {
   const [startAt] = useState(previewStart)
   /** Visiting a friend at a finished place (undefined = the current place). */
   const [visit, setVisit] = useState<number | undefined>(undefined)
+  /** Bumped to restart the game screen in another place. */
+  const [run, setRun] = useState(0)
 
   useEffect(() => {
     if (startAt != null) { setScreen('story'); return }
@@ -42,7 +45,19 @@ export default function App() {
       {screen === 'loading' && <View style={{ flex: 1, backgroundColor: colors.abyss }} />}
       {screen === 'story' && <IntroStory onDone={finishStory} startAt={startAt ?? 0} />}
       {screen === 'map' && <SeaMap onPlay={(n) => { setVisit(n); setScreen('reef') }} />}
-      {screen === 'reef' && <HomeReef visit={visit} onWatchStory={() => setScreen('story')} onOpenMap={() => setScreen('map')} />}
+      {screen === 'reef' && <HomeReef
+          key={run}
+          visit={visit}
+          onWatchStory={() => setScreen('story')}
+          onOpenMap={() => setScreen('map')}
+          onPickPlace={(n) => {
+            // the current place plays normally; a friend's home is a visit
+            void loadCare(Date.now()).then((s) => {
+              setVisit(n !== s.level && s.friends.some((f) => f.level === n) ? n : undefined)
+              setRun((r) => r + 1)
+            })
+          }}
+        />}
     </SafeAreaProvider>
   )
 }
