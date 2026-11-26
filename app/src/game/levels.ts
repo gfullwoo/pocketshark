@@ -3,6 +3,8 @@
 // until a friend finds it; the friend makes that place its home and the pocket
 // shark swims on to the next, harder place. Pure TypeScript (unit-tested).
 
+import type { PredKind } from './predators'
+
 /** How a place looks. Only the first levels have hand-made looks so far. */
 export interface Look {
   /** Water gradient: top, middle, bottom. */
@@ -24,6 +26,8 @@ export interface Look {
   ripples?: boolean
   /** Colonies of garden eels poking out of burrows in the sand. */
   eels?: boolean
+  /** Big corals fill the scene: a coral wall behind, a dense reef in front (Coral Gardens). */
+  coralReef?: boolean
 }
 
 /** How hard a place is. Level 1 is the baseline. */
@@ -55,6 +59,14 @@ export interface Level {
   look?: Look
   /** The friend who comes to live here. */
   friend: { name: string; pattern: number }
+  /** Who hunts here, and how often (weights). */
+  hunters: Partial<Record<PredKind, number>>
+}
+
+/** Levels 1–3: the big shark, the squid and the crab. From Coral Gardens on, mostly the reef hunters. */
+export function huntersFor(n: number): Partial<Record<PredKind, number>> {
+  if (n < 4) return { shark: 0.45, squid: 0.35, crab: 0.2 }
+  return { ray: 0.27, barracuda: 0.27, eel: 0.26, shark: 0.1, squid: 0.1 }
 }
 
 export const LEVEL_COUNT = 20
@@ -152,6 +164,7 @@ const CORAL_GARDENS: Look = {
   kelp: { stalk: 'rgba(60,120,96,.55)', leaf: 'rgba(76,140,110,.45)', extra: 0, tall: 0, bulbs: false },
   seagrass: false,
   backdrop: ['40,96,120', '30,74,96', '18,50,68'],
+  coralReef: true,
 }
 
 const LOOKS: Record<number, Look> = { 1: REEF, 2: KELP_FOREST, 3: SANDY_FLATS, 4: CORAL_GARDENS }
@@ -164,6 +177,7 @@ export const LEVELS: Level[] = PLACES.map(([name, blurb], i) => ({
   diff: difficultyFor(i + 1),
   look: LOOKS[i + 1],
   friend: { name: FRIENDS[i], pattern: i },
+  hunters: huntersFor(i + 1),
 }))
 
 export function level(n: number): Level {

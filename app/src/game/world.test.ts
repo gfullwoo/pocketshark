@@ -14,7 +14,7 @@ function makeWorld() {
 const hooks = () => ({ onEat: vi.fn(), onScare: vi.fn(), onDodge: vi.fn(), onToast: vi.fn() })
 
 function pred(kind: PredKind, x: number, y: number, extra: Partial<Pred> = {}): Pred {
-  return { kind, x, y, dir: 1, ang: 0, s: kind === 'shark' ? 334 : kind === 'squid' ? 183 : 116, warn: 0, hunt: false, open: 0, minD: 1e9, done: false, ph: 0, entered: true, ...extra }
+  return { kind, x, y, dir: 1, ang: 0, s: ({ shark: 334, squid: 183, crab: 116, ray: 190, barracuda: 224, eel: 235 } as Record<PredKind, number>)[kind], warn: 0, hunt: false, open: 0, minD: 1e9, done: false, ph: 0, entered: true, ...extra }
 }
 
 /** Put the pocket shark so that its body overlaps the given point. */
@@ -53,7 +53,7 @@ describe('predator hitboxes cover the whole body', () => {
 })
 
 describe('touching a predator anywhere is a catch', () => {
-  it.each(['shark', 'squid', 'crab'] as PredKind[])('%s: brushing its edge scares the shark home', (kind) => {
+  it.each(['shark', 'squid', 'crab', 'ray', 'barracuda', 'eel'] as PredKind[])('%s: brushing its edge scares the shark home', (kind) => {
     const w = makeWorld(), h = hooks()
     const p = pred(kind, 250, kind === 'crab' ? 600 : 350)
     w.pred = p
@@ -427,5 +427,58 @@ describe('garden eels (Sandy Flats)', () => {
     expect(el.e).toBeLessThan(0.1)
     for (let i = 0; i < 30 * 6; i++) { placeShark(w, 20, 40); w.pred = null; w.update(1 / 30, false, false, h) }
     expect(el.e).toBeGreaterThan(0.9)
+  })
+})
+
+describe('Coral Gardens hunters', () => {
+  const run = (w: World, h: ReturnType<typeof hooks>, secs: number) => { for (let i = 0; i < secs * 60; i++) w.update(1 / 60, true, false, h) }
+
+  it('the stingray turns to chase a pocket shark that comes near, then gives up and leaves', () => {
+    const w = makeWorld(), h = hooks()
+    w.setLevel(4); w.nextSub = 999
+    const p = w.spawnPredator('ray')
+    p.x = 60; p.y = 300; p.ang = 0; p.dir = 1
+    w.pred = p
+    placeShark(w, 60 + p.s * 1.3, 220)
+    w.update(1 / 60, true, false, h)
+    expect(p.ray!.state).toBe('chase')
+    expect(p.hunt).toBe(true)
+    p.ray!.t = 0
+    w.update(1 / 60, true, false, h)
+    expect(p.ray!.state).toBe('leave')
+  })
+
+  it('the barracuda stops and stares before it darts', () => {
+    const w = makeWorld(), h = hooks()
+    w.setLevel(4); w.nextSub = 999
+    const p = w.spawnPredator('barracuda')
+    p.x = 20; p.y = 300; p.ang = 0; p.dir = 1
+    w.pred = p
+    placeShark(w, 20 + p.s * 1.2, 300)
+    w.update(1 / 60, true, false, h)
+    expect(p.cuda!.state).toBe('lock')
+    const x0 = p.x
+    run(w, h, 0.3)
+    expect(Math.abs(p.x - x0)).toBeLessThan(1) // holds still while locking on
+    run(w, h, 0.4)
+    expect(['dart', 'cool']).toContain(p.cuda!.state)
+  })
+
+  it('the eel lunges out of its hole at a shark in reach, and goes home after a while', () => {
+    const w = makeWorld(), h = hooks()
+    w.setLevel(4); w.nextSub = 999
+    const p = w.spawnPredator('eel')
+    w.pred = p
+    const e = p.eel!
+    placeShark(w, e.ax + 10, e.ay - e.len * 0.7)
+    run(w, h, 0.7)
+    expect(['warn', 'lunge']).toContain(e.state)
+    run(w, h, 0.5)
+    expect(h.onScare).toHaveBeenCalledTimes(1)
+    // later it slides back in and is gone for good
+    placeShark(w, w.home().x, w.home().y)
+    e.life = 0
+    run(w, h, 4)
+    expect(w.pred).toBeNull()
   })
 })

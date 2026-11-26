@@ -1,10 +1,11 @@
-// Predators of the home reef: the big shark, the squid and the crab.
+// Predators of the home reef: the big shark, the squid and the crab, and in
+// Coral Gardens the stingray, the barracuda and the moray eel.
 // Each has a drawing and a set of hit circles that cover its whole outline
 // (head, body, fins, tail, tentacles, claws, legs), so touching ANY part of it
 // counts as being caught.
 import type { Ctx2D } from './ctx2d'
 
-export type PredKind = 'shark' | 'squid' | 'crab'
+export type PredKind = 'shark' | 'squid' | 'crab' | 'ray' | 'barracuda' | 'eel'
 
 export interface Pred {
   kind: PredKind
@@ -40,6 +41,19 @@ export interface Pred {
   squid?: { state: 'swim' | 'aim' | 'strike' | 'retract' | 'cool'; t: number; e: number; warned: boolean }
   /** Crab only: walking, crouching before a leap, in the air, or resting after landing. */
   crab?: { state: 'walk' | 'crouch' | 'air' | 'cool'; t: number; vx: number; vy: number; warned: boolean }
+  /** Stingray only: gliding across, chasing the pocket shark (for a while), or leaving. `t` counts down. */
+  ray?: { state: 'glide' | 'chase' | 'leave'; t: number }
+  /** Barracuda only: cruising, locking on (a short warning), darting in a straight line, or resting. */
+  cuda?: { state: 'cruise' | 'lock' | 'dart' | 'cool'; t: number }
+  /**
+   * Moray eel only: it lives in a hole in the reef at (ax, ay). It peeks out,
+   * lunges at a pocket shark that comes near (after a short warning), pulls
+   * back, and after a while sinks back into its hole for good. `ext` is how far
+   * out of the hole it is (0 hidden … 1 fully out), `len` its full length.
+   */
+  eel?: { state: 'peek' | 'warn' | 'lunge' | 'back' | 'cool' | 'leave'; t: number; ax: number; ay: number; ext: number; len: number; life: number; lunges: number }
+  /** Finished its visit without leaving the screen (the eel going back into its hole). */
+  gone?: boolean
 }
 
 export interface Circle { x: number; y: number; r: number }
@@ -48,6 +62,9 @@ export const PRED_INFO: Record<PredKind, { coming: string; caught: string; sees:
   shark: { coming: 'A big shark is coming! Glow off or swim home', caught: 'Chomp! The big shark nipped you. Swim home!', sees: 'It sees your glow!' },
   squid: { coming: 'A squid is coming! Keep away from its tentacles', caught: 'The squid grabbed you! Wriggle home!', sees: 'The squid sees your glow!' },
   crab: { coming: 'A crab is scuttling by! Stay up high', caught: 'Pinch! The crab grabbed you. Swim home!', sees: 'The crab is about to jump!' },
+  ray: { coming: 'A stingray is gliding in! Don’t let it catch you', caught: 'Zap! The stingray got you. Swim home!', sees: 'The stingray is chasing you!' },
+  barracuda: { coming: 'A barracuda! Watch out when it stops and stares', caught: 'Snap! The barracuda got you. Swim home!', sees: 'The barracuda is locking on!' },
+  eel: { coming: 'Something lives in the coral… keep your distance', caught: 'The eel grabbed you! Wriggle home!', sees: 'An eel is about to lunge!' },
 }
 
 const TAU = Math.PI * 2
@@ -84,7 +101,44 @@ const CRAB_HITS: [number, number, number][] = [
   [-14, -34, 7], [14, -34, 7], // eye stalks
 ]
 
+// Stingray (units: 200 = the ray's size), pointing along +x: disc, wings and the long tail.
+const RAY_HITS: [number, number, number][] = [
+  [42, 0, 18], [18, 0, 30], [-8, 0, 30], [-30, 0, 20], [6, -34, 22], [6, 34, 22], [0, -58, 13], [0, 58, 13], [-6, -74, 7], [-6, 74, 7],
+  [-58, 0, 6], [-80, 0, 6], [-102, 0, 6], [-124, 0, 7], [-146, 0, 5], // tail and barb
+]
+// Barracuda (units: 220 = its length), pointing along +x.
+const CUDA_HITS: [number, number, number][] = [
+  [104, 3, 7], [86, 1, 11], [62, 0, 14], [36, 0, 15], [8, 0, 15], [-20, 0, 13], [-46, 0, 11], [-70, 0, 8], [-90, 0, 7],
+  [-106, -14, 8], [-106, 14, 8], // tail fin
+  [0, -20, 7], [-30, -18, 6], [-36, 18, 6], // fins
+]
+
+/** Points along the eel's body, from its hole to its head. */
+export function eelBody(p: Pred, t = 0): { x: number; y: number }[] {
+  const e = p.eel ?? { ax: p.x - Math.cos(p.ang) * p.s, ay: p.y - Math.sin(p.ang) * p.s, ext: 1, len: p.s }
+  const L = e.len * e.ext, ux = Math.cos(p.ang), uy = Math.sin(p.ang), N = 12, pts = []
+  const amp = e.len * 0.05 * (1 - 0.6 * e.ext)
+  for (let i = 0; i <= N; i++) {
+    const f = i / N, w = amp * Math.sin(f * Math.PI * 2.2 - t * 4) * f * (1 - f) * 4
+    pts.push({ x: e.ax + ux * L * f - uy * w, y: e.ay + uy * L * f + ux * w })
+  }
+  return pts
+}
+
 export function hitCircles(p: Pred): Circle[] {
+  if (p.kind === 'ray') {
+    const sc = p.s / 200, c = Math.cos(p.ang), sn = Math.sin(p.ang)
+    return RAY_HITS.map(([x, y, r]) => ({ x: p.x + (x * c - y * sn) * sc, y: p.y + (x * sn + y * c) * sc, r: r * sc }))
+  }
+  if (p.kind === 'barracuda') {
+    const sc = p.s / 220, c = Math.cos(p.ang), sn = Math.sin(p.ang)
+    return CUDA_HITS.map(([x, y, r]) => ({ x: p.x + (x * c - y * sn) * sc, y: p.y + (x * sn + y * c) * sc, r: r * sc }))
+  }
+  if (p.kind === 'eel') {
+    // only the part that is out of the hole can bite (the last point is the head)
+    const pts = eelBody(p), th = p.s * 0.042
+    return pts.slice(1).map((q, i, a) => ({ x: q.x, y: q.y, r: i === a.length - 1 ? th * 1.5 : th }))
+  }
   if (p.kind === 'shark') {
     const sc = p.s / 230
     return SHARK_HITS.map(([x, y, r]) => ({ x: p.x + p.dir * x * sc, y: p.y + y * sc, r: r * sc }))
@@ -122,6 +176,9 @@ export function drawWarning(ctx: Ctx2D, x: number, y: number, t: number) {
 export function drawPredator(ctx: Ctx2D, p: Pred, t: number) {
   if (p.kind === 'shark') drawBigShark(ctx, p, t)
   else if (p.kind === 'squid') drawSquid(ctx, p, t)
+  else if (p.kind === 'ray') drawRay(ctx, p, t)
+  else if (p.kind === 'barracuda') drawBarracuda(ctx, p, t)
+  else if (p.kind === 'eel') drawEel(ctx, p, t)
   else drawCrab(ctx, p, t)
 }
 
@@ -363,4 +420,119 @@ function drawCrab(ctx: Ctx2D, p: Pred, t: number) {
   ctx.strokeStyle = dark; ctx.lineWidth = 2
   ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(0, -6); ctx.lineTo(6, -4); ctx.stroke()
   ctx.restore()
+}
+
+/** Stingray, seen from above as it glides: a broad rippling disc and a long, barbed tail. */
+function drawRay(ctx: Ctx2D, p: Pred, t: number) {
+  const sc = p.s / 200, flap = Math.sin(t * (p.hunt ? 7 : 4) + p.ph)
+  ctx.save()
+  ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.scale(sc, sc)
+  // tail with its barb
+  ctx.strokeStyle = '#4a3f36'; ctx.lineCap = 'round'; ctx.lineWidth = 6
+  const tw = Math.sin(t * 3 + p.ph) * 10
+  ctx.beginPath(); ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-95, tw, -150, -tw * 0.5); ctx.stroke()
+  ctx.fillStyle = '#d9c9a8'
+  ctx.beginPath(); ctx.moveTo(-112, tw * 0.6 - 3); ctx.lineTo(-136, tw * 0.3 - 9); ctx.lineTo(-118, tw * 0.6 + 2); ctx.closePath(); ctx.fill()
+  // the disc: wing tips ripple up and down (narrower from above when raised)
+  const span = 76 * (0.88 + 0.12 * flap), tipX = -4 + flap * 6
+  const g = ctx.createRadialGradient(10, -10, 4, 0, 0, 90)
+  g.addColorStop(0, '#9a8a72'); g.addColorStop(0.7, '#6f6252'); g.addColorStop(1, '#4a4036')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(56, 0)
+  ctx.bezierCurveTo(48, -26, 24, -span * 0.75, tipX, -span)
+  ctx.bezierCurveTo(-18, -span * 0.7, -38, -26, -44, 0)
+  ctx.bezierCurveTo(-38, 26, -18, span * 0.7, tipX, span)
+  ctx.bezierCurveTo(24, span * 0.75, 48, 26, 56, 0)
+  ctx.closePath(); ctx.fill()
+  ctx.strokeStyle = 'rgba(210,190,160,.35)'; ctx.lineWidth = 2; ctx.stroke()
+  // spots
+  ctx.fillStyle = 'rgba(40,32,26,.45)'
+  for (const [x, y, r] of [[8, -30, 5], [-12, 22, 6], [22, 14, 4], [-20, -14, 4], [0, 46, 4], [2, -52, 4]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill() }
+  // eyes on top of the head, angry when chasing
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = '#f2e6c8'; ctx.beginPath(); ctx.ellipse(30, side * 12, 6, 5, 0, 0, TAU); ctx.fill()
+    ctx.fillStyle = '#120c08'; ctx.beginPath(); ctx.arc(32, side * 12, 3, 0, TAU); ctx.fill()
+    if (p.hunt) { ctx.strokeStyle = '#120c08'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(24, side * 20); ctx.lineTo(38, side * 13); ctx.stroke() }
+  }
+  ctx.restore()
+}
+
+/** Barracuda: long, silver, dark bars, a jutting lower jaw full of teeth. */
+function drawBarracuda(ctx: Ctx2D, p: Pred, t: number) {
+  const sc = p.s / 220, flip = Math.cos(p.ang) < 0 ? -1 : 1
+  const wag = Math.sin(t * (p.cuda?.state === 'dart' ? 18 : 6) + p.ph) * 6
+  ctx.save()
+  ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.scale(sc, sc * flip)
+  ctx.lineJoin = 'round'
+  // tail fin
+  ctx.fillStyle = '#4c5d6c'
+  ctx.beginPath(); ctx.moveTo(-88, 0); ctx.lineTo(-114, -20 + wag); ctx.lineTo(-104, 0); ctx.lineTo(-114, 20 + wag); ctx.closePath(); ctx.fill()
+  // fins
+  ctx.beginPath(); ctx.moveTo(4, -15); ctx.lineTo(-6, -28); ctx.lineTo(-14, -14); ctx.closePath(); ctx.fill()
+  ctx.beginPath(); ctx.moveTo(-26, -13); ctx.lineTo(-36, -24); ctx.lineTo(-42, -11); ctx.closePath(); ctx.fill()
+  ctx.beginPath(); ctx.moveTo(-30, 12); ctx.lineTo(-40, 24); ctx.lineTo(-46, 10); ctx.closePath(); ctx.fill()
+  // body
+  const g = ctx.createLinearGradient(0, -16, 0, 16)
+  g.addColorStop(0, '#5b6f80'); g.addColorStop(0.5, '#b9c7d2'); g.addColorStop(1, '#e8eef2')
+  ctx.fillStyle = g
+  ctx.beginPath()
+  ctx.moveTo(108, 2)
+  ctx.bezierCurveTo(96, -10, 60, -16, 20, -16)
+  ctx.bezierCurveTo(-30, -16, -70, -10, -92, -3)
+  ctx.lineTo(-92, 3)
+  ctx.bezierCurveTo(-70, 10, -30, 15, 20, 15)
+  ctx.bezierCurveTo(60, 15, 98, 12, 112, 6)
+  ctx.closePath(); ctx.fill()
+  ctx.strokeStyle = 'rgba(30,40,50,.5)'; ctx.lineWidth = 1.5; ctx.stroke()
+  // dark bars
+  ctx.fillStyle = 'rgba(40,52,64,.45)'
+  for (const x of [52, 30, 8, -14, -36, -56]) { ctx.beginPath(); ctx.ellipse(x, -7, 4, 7, 0.25, 0, TAU); ctx.fill() }
+  // teeth along the jutting jaw
+  ctx.fillStyle = '#fff'
+  for (let x = 74; x <= 104; x += 6) { ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x + 2, 0); ctx.lineTo(x + 4, 4); ctx.closePath(); ctx.fill() }
+  // eye: a fierce stare while locking on
+  const lock = p.cuda?.state === 'lock' || p.cuda?.state === 'dart'
+  ctx.fillStyle = '#f6f2d8'; ctx.beginPath(); ctx.arc(84, -5, 5.5, 0, TAU); ctx.fill()
+  ctx.fillStyle = '#0c1014'; ctx.beginPath(); ctx.arc(86, -5, lock ? 2 : 3.2, 0, TAU); ctx.fill()
+  if (lock) { ctx.strokeStyle = '#0c1014'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(77, -12); ctx.lineTo(92, -8); ctx.stroke() }
+  ctx.restore()
+}
+
+/** Moray eel: a spotted green body coming out of a dark hole in the reef. */
+function drawEel(ctx: Ctx2D, p: Pred, t: number) {
+  const e = p.eel, pts = eelBody(p, t), th = p.s * 0.08
+  const ax = e?.ax ?? pts[0].x, ay = e?.ay ?? pts[0].y
+  // the hole
+  ctx.fillStyle = '#03070c'
+  ctx.beginPath(); ctx.ellipse(ax, ay, th * 1.1, th * 0.75, 0, 0, TAU); ctx.fill()
+  // body
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round'
+  ctx.strokeStyle = '#3d5a2a'; ctx.lineWidth = th * 1.08
+  ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke()
+  ctx.strokeStyle = '#6f8f3a'; ctx.lineWidth = th * 0.85
+  ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke()
+  ctx.fillStyle = 'rgba(30,44,18,.55)'
+  for (let i = 1; i < pts.length - 1; i++) { const q = pts[i]; ctx.beginPath(); ctx.arc(q.x + ((i * 7) % 5) - 2, q.y + ((i * 3) % 5) - 2, th * 0.14, 0, TAU); ctx.fill() }
+  // head
+  const h = pts[pts.length - 1], a = p.ang, open = p.open
+  ctx.save()
+  ctx.translate(h.x, h.y); ctx.rotate(a)
+  if (Math.cos(a) < 0) ctx.scale(1, -1)
+  ctx.fillStyle = '#6f8f3a'
+  ctx.beginPath(); ctx.ellipse(th * 0.25, -th * 0.08 - open * th * 0.18, th * 0.85, th * 0.42, -open * 0.35, 0, TAU); ctx.fill()
+  ctx.fillStyle = '#5e7c30'
+  ctx.beginPath(); ctx.ellipse(th * 0.2, th * 0.18 + open * th * 0.18, th * 0.75, th * 0.3, open * 0.35, 0, TAU); ctx.fill()
+  if (open > 0.1) {
+    ctx.fillStyle = '#2a0b10'
+    ctx.beginPath(); ctx.ellipse(th * 0.55, th * 0.05, th * 0.45, th * 0.25 * open, 0, 0, TAU); ctx.fill()
+    ctx.fillStyle = '#fff'
+    for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(th * (0.3 + k * 0.17), -th * 0.12 * open, th * 0.05, 0, TAU); ctx.fill() }
+  }
+  ctx.fillStyle = '#f4f0c8'; ctx.beginPath(); ctx.arc(th * 0.55, -th * 0.28 - open * th * 0.15, th * 0.15, 0, TAU); ctx.fill()
+  ctx.fillStyle = '#0b0f06'; ctx.beginPath(); ctx.arc(th * 0.6, -th * 0.28 - open * th * 0.15, th * 0.08, 0, TAU); ctx.fill()
+  ctx.restore()
+  // a rocky lip in front of the hole, hiding where the body goes in
+  ctx.fillStyle = '#2a2f36'
+  ctx.beginPath(); ctx.ellipse(ax, ay + th * 0.45, th * 1.5, th * 0.5, 0, Math.PI, TAU); ctx.fill()
 }

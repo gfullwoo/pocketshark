@@ -4,6 +4,7 @@
 // (pink krill, orange shrimp, gold fish) never get lost against the reef.
 
 import type { Ctx2D } from './ctx2d'
+import { paintCoralFront, paintCoralWall } from './coralReef'
 import { level, type Look } from './levels'
 
 /** The look of level 1 (the original reef), used when no look is given. */
@@ -73,6 +74,12 @@ export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_
 
   paintCaveRubble(c, H, cave)
 
+  // ---- Coral Gardens: big corals fill the reef ----
+  if (look.coralReef) {
+    paintCoralFront(c, W, H, cave.w, cave.top, look.coral, look.water[1], (x) => seabedY(x, H))
+    if (look.seagrass) paintSeagrass(c, W, H, cave)
+    return
+  }
   // ---- coral reef from the cave to the right wall ----
   const scale = Math.max(0.6, Math.min(1.1, W / 700))
   const palette = look.coral
@@ -444,6 +451,8 @@ export function paintBackdrop(c: Ctx, W: number, H: number, look: Look = DEFAULT
       c.lineTo(W + 40, H); c.closePath(); c.fill()
     }
   }
+  // Coral Gardens: a wall of big corals far behind the reef
+  if (look.coralReef) paintCoralWall(c, W, H, look.coral, look.water[1])
   // a light, even haze over the lower water so the layers sit back in the distance
   const haze = c.createLinearGradient(0, H * 0.5, 0, H)
   haze.addColorStop(0, 'rgba(10,32,56,0)'); haze.addColorStop(1, 'rgba(8,26,46,.22)')

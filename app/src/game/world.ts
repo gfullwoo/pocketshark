@@ -12,7 +12,7 @@ import { drawBeam, drawSonar, drawSub, inBeam, subLamp, type Sub } from './subma
 import { level as levelDef, type Difficulty, type Look } from './levels'
 import { drawPocketShark, PLAYER_LOOK, type SharkLook } from './pocketShark'
 import { drawEels, makeEels, updateEels, type Eel } from './eels'
-import { drawPredator, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
+import { drawPredator, eelBody, hitCircles, PRED_INFO, sharkMouth, squidTentacleLength, touches, type Circle, type Pred, type PredKind } from './predators'
 import { caveBox, drawKelp, seabedY } from './scenery'
 import { drawShrimp } from './shrimp'
 
@@ -57,9 +57,11 @@ function pickKind(): Kind {
   }
   return 'krill'
 }
-function pickPredator(): PredKind {
-  const r = Math.random()
-  return r < 0.45 ? 'shark' : r < 0.8 ? 'squid' : 'crab'
+function pickPredator(hunters: Partial<Record<PredKind, number>>): PredKind {
+  const list = Object.entries(hunters) as [PredKind, number][]
+  let r = Math.random() * list.reduce((a, [, w]) => a + w, 0)
+  for (const [k, w] of list) { r -= w; if (r <= 0) return k }
+  return list[0][0]
 }
 
 /** A little heart shape (drawn, so it doesn't depend on the font). */
@@ -105,6 +107,8 @@ export class World {
   /** This place's difficulty and look (see levels.ts). */
   diff: Difficulty = levelDef(1).diff
   look: Look = levelDef(1).look!
+  /** Who hunts in this place. */
+  hunters = levelDef(1).hunters
   /** A friend who has come to find the pocket shark (see summonFriend). */
   friend: { x: number; y: number; dir: number; tilt: number; look: SharkLook; met: boolean; t: number } | null = null
   /** No new predators or submarines (a friend is on the way). */
@@ -211,6 +215,26 @@ export class World {
       const x = fromLeft ? -s * 0.6 : W + s * 0.6, y = rnd(SH * 0.1, SH * 0.55)
       const aimX = this.shark.x + rnd(-80, 80), aimY = this.shark.y + rnd(-60, 60)
       return { ...base, s, x, y, ang: Math.atan2(aimY - y, aimX - x), warn: 0, squid: { state: 'swim', t: 0, e: 0, warned: false } }
+    }
+    if (kind === 'ray') {
+      const s = Math.min(W, this.H) * 0.36 + 50
+      const y = rnd(SH * 0.15, SH * 0.6)
+      return { ...base, s, x: fromLeft ? -s * 0.8 : W + s * 0.8, y, ang: fromLeft ? 0 : Math.PI, warn: 0, ray: { state: 'glide', t: 0 } }
+    }
+    if (kind === 'barracuda') {
+      const s = Math.min(W, this.H) * 0.42 + 60
+      const y = Math.max(s * 0.2, Math.min(SH * 0.75, this.shark.y + rnd(-90, 90)))
+      return { ...base, s, x: fromLeft ? -s * 0.6 : W + s * 0.6, y, ang: fromLeft ? 0 : Math.PI, warn: 0, cuda: { state: 'cruise', t: 0 } }
+    }
+    if (kind === 'eel') {
+      // a hole in the reef, out in the open part of the seabed (never near the cave)
+      const s = Math.min(W, this.H) * 0.5 + 40
+      const cw = caveBox(W, SH).w, ax = rnd(Math.min(W - 60, cw + 50), W - 50), ay = seabedY(ax, SH) - 6
+      const ang = -Math.PI / 2 + rnd(-0.4, 0.4)
+      return {
+        ...base, s, x: ax, y: ay, ang, warn: 0, entered: true,
+        eel: { state: 'peek', t: 0.6, ax, ay, ext: 0, len: s, life: rnd(11, 15), lunges: 0 },
+      }
     }
     const s = Math.min(W, this.H) * 0.22 + 30
     const x = fromLeft ? -s * 0.8 : W + s * 0.8
@@ -332,6 +356,113 @@ export class World {
       if (q.t <= 0) { q.state = 'cool'; q.t = 1.8 }
     }
     pr.y = Math.max(-pr.s, Math.min(this.SH - pr.s * 0.12, pr.y))
+  }
+
+  private turn(pr: Pred, want: number, rate: number, dt: number) {
+    let da = want - pr.ang
+    while (da > Math.PI) da -= TAU
+    while (da < -Math.PI) da += TAU
+    pr.ang += Math.max(-rate * dt, Math.min(rate * dt, da))
+  }
+
+  /**
+   * The stingray glides across with a gentle wave. When the pocket shark comes
+   * close (from farther away if it's glowing), it turns and chases it for a few
+   * seconds, a little slower than the shark can swim, then gives up and leaves.
+   */
+  private updateRay(pr: Pred, dt: number, d: number, home: boolean) {
+    const q = (pr.ray ??= { state: 'glide', t: 0 }), W = this.W
+    q.t -= dt
+    const sees = pr.s * (1.6 + 1.2 * this.gI)
+    let v = W * 0.14 + 60
+    if (q.state === 'glide') {
+      this.turn(pr, (pr.dir > 0 ? 0 : Math.PI) + Math.sin(pr.ph * 0.5) * 0.35, 1.2, dt)
+      if (!pr.done && !home && d < sees) { q.state = 'chase'; q.t = rnd(3.5, 5); pr.hunt = true }
+    } else if (q.state === 'chase') {
+      this.turn(pr, Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 1.9, dt)
+      v = Math.min(W * 0.32 + 70, this.maxSpeed() * 0.82)
+      if (q.t <= 0 || pr.done || home) { q.state = 'leave'; pr.hunt = false; pr.dir = pr.x < W / 2 ? -1 : 1 }
+    } else {
+      this.turn(pr, pr.dir > 0 ? 0 : Math.PI, 1.5, dt)
+      v = W * 0.2 + 80
+    }
+    pr.x += Math.cos(pr.ang) * v * dt
+    pr.y += Math.sin(pr.ang) * v * dt
+    pr.y = Math.max(pr.s * 0.25, Math.min(this.SH - pr.s * 0.25, pr.y))
+  }
+
+  /**
+   * The barracuda cruises across. When the pocket shark is ahead of it and
+   * close, it stops dead and stares (a short warning), then darts in a
+   * straight line at where the shark was, very fast, and cruises on.
+   */
+  private updateBarracuda(pr: Pred, dt: number, d: number, home: boolean) {
+    const q = (pr.cuda ??= { state: 'cruise', t: 0 }), W = this.W
+    q.t -= dt
+    if (q.state === 'cruise' || q.state === 'cool') {
+      this.turn(pr, pr.dir > 0 ? 0 : Math.PI, 1.2, dt)
+      const v = (W * 0.2 + 80) * (q.state === 'cool' ? 0.7 : 1)
+      pr.x += Math.cos(pr.ang) * v * dt
+      pr.y += Math.sin(pr.ang) * v * dt
+      if (q.state === 'cool' && q.t <= 0) q.state = 'cruise'
+      const ahead = pr.dir > 0 ? this.shark.x > pr.x : this.shark.x < pr.x
+      if (q.state === 'cruise' && !pr.done && !home && ahead && d < pr.s * (1.6 + 0.6 * this.gI) && Math.abs(this.shark.y - pr.y) < pr.s * 0.8) {
+        q.state = 'lock'; q.t = 0.6; pr.hunt = true
+      }
+    } else if (q.state === 'lock') {
+      // stop and aim
+      this.turn(pr, Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 6, dt)
+      pr.open = Math.min(1, pr.open + dt * 3)
+      if (q.t <= 0) { q.state = 'dart'; q.t = 0.5 }
+    } else {
+      const v = W * 1.2 + 320
+      pr.x += Math.cos(pr.ang) * v * dt
+      pr.y += Math.sin(pr.ang) * v * dt
+      if (q.t <= 0) { q.state = 'cool'; q.t = 2.2; pr.hunt = false; pr.open = 0; pr.dir = Math.cos(pr.ang) >= 0 ? 1 : -1 }
+    }
+    pr.y = Math.max(pr.s * 0.1, Math.min(this.SH - pr.s * 0.08, pr.y))
+  }
+
+  /**
+   * The moray eel lives in a hole in the reef. It pokes its head out and
+   * watches. If the pocket shark comes within reach it opens its mouth (a short
+   * warning), lunges out at it, pulls back, and rests. After a while (or a few
+   * lunges) it slides back into its hole.
+   */
+  private updateEel(pr: Pred, dt: number, home: boolean) {
+    const e = (pr.eel ??= { state: 'peek', t: 0, ax: pr.x - Math.cos(pr.ang) * pr.s, ay: pr.y - Math.sin(pr.ang) * pr.s, ext: 1, len: pr.s, life: 12, lunges: 0 })
+    e.t -= dt
+    e.life -= dt
+    const toShark = Math.atan2(this.shark.y - e.ay, this.shark.x - e.ax)
+    const reach = Math.hypot(this.shark.x - e.ax, this.shark.y - e.ay)
+    // it only lunges up and to the sides, never down into the sand
+    const aimUp = (a: number) => Math.max(-Math.PI + 0.25, Math.min(-0.25, a > Math.PI / 2 ? a - TAU : a))
+    if (e.state === 'peek' || e.state === 'cool') {
+      e.ext += (0.3 - e.ext) * Math.min(1, dt * 3)
+      pr.open = Math.max(0, pr.open - dt * 3)
+      this.turn(pr, aimUp(toShark), 1.5, dt)
+      if (e.state === 'cool' && e.t <= 0) e.state = 'peek'
+      if (e.life <= 0 || e.lunges >= 3) { e.state = 'leave' }
+      else if (e.state === 'peek' && e.t <= 0 && !pr.done && !home && reach < e.len * 0.95) { e.state = 'warn'; e.t = 0.45; pr.hunt = true }
+    } else if (e.state === 'warn') {
+      this.turn(pr, aimUp(toShark), 4, dt)
+      pr.open = Math.min(1, pr.open + dt * 3)
+      e.ext += (0.22 - e.ext) * Math.min(1, dt * 6) // pulls back a little, coiling
+      if (e.t <= 0) { e.state = 'lunge'; e.t = 0.24; e.lunges++ }
+    } else if (e.state === 'lunge') {
+      e.ext = Math.min(1, e.ext + dt / 0.2)
+      if (e.t <= 0) { e.state = 'back'; e.t = 0.6 }
+    } else if (e.state === 'back') {
+      e.ext += (0.3 - e.ext) * Math.min(1, dt * 4)
+      pr.open = Math.max(0, pr.open - dt * 2)
+      if (e.t <= 0) { e.state = 'cool'; e.t = 1.4; pr.hunt = false }
+    } else {
+      e.ext = Math.max(0, e.ext - dt * 0.8)
+      if (e.ext <= 0) pr.gone = true
+    }
+    const head = eelBody(pr)
+    pr.x = head[head.length - 1].x
+    pr.y = head[head.length - 1].y
   }
 
   /** Highest a crab can leap above its walking line: staying above this is safe. */
@@ -630,8 +761,8 @@ export class World {
     // ---- predators (none new while the sub is around) ----
     this.nextPred -= dt
     if (!this.pred && this.nextPred <= 0 && !resting && !this.sub && !this.calm) {
-      const kind = pickPredator()
-      this.pred = kind !== 'crab' && Math.random() < 0.5 ? this.spawnFromBackground(kind) : this.spawnPredator(kind)
+      const kind = pickPredator(this.hunters)
+      this.pred = (kind === 'shark' || kind === 'squid') && Math.random() < 0.5 ? this.spawnFromBackground(kind) : this.spawnPredator(kind)
     }
     const pr = this.pred
     const pdt = dt * this.diff.predSpeed // predators move faster in harder places
@@ -653,6 +784,12 @@ export class World {
           pr.open += ((pr.hunt && dm < pr.s * 0.45 ? 1 : 0) - pr.open) * Math.min(1, pdt * 8)
         } else if (pr.kind === 'squid') {
           this.updateSquid(pr, pdt, d, home, hooks)
+        } else if (pr.kind === 'ray') {
+          this.updateRay(pr, pdt, d, home)
+        } else if (pr.kind === 'barracuda') {
+          this.updateBarracuda(pr, pdt, d, home)
+        } else if (pr.kind === 'eel') {
+          this.updateEel(pr, pdt, home)
         } else {
           this.updateCrab(pr, pdt, home, hooks)
         }
@@ -660,7 +797,7 @@ export class World {
         if (!pr.done && !home && !resting && touches(hitCircles(pr), this.sharkCircles())) this.caught(pr, hooks)
         const inside = pr.x > -pr.s * 0.2 && pr.x < W + pr.s * 0.2 && pr.y > -pr.s * 0.2 && pr.y < H + pr.s * 0.2
         if (inside) pr.entered = true
-        const gone = pr.entered && (pr.x < -pr.s * 0.7 || pr.x > W + pr.s * 0.7 || pr.y < -pr.s * 0.7 || pr.y > H + pr.s * 0.7)
+        const gone = pr.gone || pr.entered && (pr.x < -pr.s * 0.7 || pr.x > W + pr.s * 0.7 || pr.y < -pr.s * 0.7 || pr.y > H + pr.s * 0.7)
         if (gone) {
           if (!pr.done && pr.minD < pr.s * 0.75) {
             hooks.onDodge()
@@ -725,8 +862,8 @@ export class World {
       ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill()
     }
     if (this.sub) { drawSonar(ctx, this.sub); drawBeam(ctx, this.sub, this.SH) }
-    // a crab walks on the seabed, behind the swimmers
-    if (this.pred && this.pred.kind === 'crab') drawPredator(ctx, this.pred, t)
+    // a crab walks on the seabed and an eel lives in the reef: both behind the swimmers
+    if (this.pred && (this.pred.kind === 'crab' || this.pred.kind === 'eel')) drawPredator(ctx, this.pred, t)
     for (const p of this.prey) if (p.eat === undefined) this.drawPrey(ctx, p)
     ctx.save()
     if (this.atHome()) ctx.globalAlpha = 0.75
@@ -736,7 +873,7 @@ export class World {
     // snacks being gulped are drawn over the open mouth
     for (const p of this.prey) if (p.eat !== undefined) this.drawPrey(ctx, p)
     if (this.pred) {
-      if (this.pred.kind !== 'crab' && !this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
+      if (this.pred.kind !== 'crab' && this.pred.kind !== 'eel' && !this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     }
     if (this.sub) drawSub(ctx, this.sub, t)
     for (const q of this.parts) {
@@ -878,6 +1015,7 @@ export class World {
     const L = levelDef(n)
     this.diff = L.diff
     this.look = L.look ?? levelDef(1).look!
+    this.hunters = L.hunters
     this.friend = null
     this.calm = false
     this.pred = null
