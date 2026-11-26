@@ -142,7 +142,19 @@ const SANDY_FLATS: Look = {
   eels: true,
 }
 
-const LOOKS: Record<number, Look> = { 1: REEF, 2: KELP_FOREST, 3: SANDY_FLATS }
+// Shallow, clear, sunlit water over pale sand, packed with bright coral.
+const CORAL_GARDENS: Look = {
+  water: ['#0f5a78', '#0a3550', '#04182a'],
+  rock: { light: '#4a5a6a', mid: '#2a3644', dark: '#111a24' },
+  sand: ['#5a5644', '#221f16'],
+  coral: ['#ff7a8a', '#ffb347', '#c86bff', '#4fd1c5', '#ff5fa2', '#ffd166', '#6b8cff'],
+  coralGap: [26, 52],
+  kelp: { stalk: 'rgba(60,120,96,.55)', leaf: 'rgba(76,140,110,.45)', extra: 0, tall: 0, bulbs: false },
+  seagrass: false,
+  backdrop: ['40,96,120', '30,74,96', '18,50,68'],
+}
+
+const LOOKS: Record<number, Look> = { 1: REEF, 2: KELP_FOREST, 3: SANDY_FLATS, 4: CORAL_GARDENS }
 
 export const LEVELS: Level[] = PLACES.map(([name, blurb], i) => ({
   n: i + 1,

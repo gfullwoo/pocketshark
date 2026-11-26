@@ -204,6 +204,21 @@ export function moveOn(s: CareState, friendName: string, lastLevel: number) {
   s.levelGp = 0
 }
 
+/**
+ * A friend already lives in the current place but the shark stayed because the
+ * next place wasn't built yet. Once it is, swim on (repeats if several are
+ * ready). Returns true if the shark moved.
+ */
+export function swimOnIfReady(s: CareState, isPlayable: (n: number) => boolean, lastLevel: number): boolean {
+  let moved = false
+  while (s.level < lastLevel && s.friends.some((f) => f.level === s.level) && isPlayable(s.level + 1)) {
+    s.level += 1
+    s.levelGp = 0
+    moved = true
+  }
+  return moved
+}
+
 /** The friend stays here, but the next place isn't built yet: keep playing here. */
 export function befriend(s: CareState, friendName: string) {
   if (!s.friends.some((f) => f.level === s.level)) s.friends.push({ level: s.level, name: friendName })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { RULES, catchUp, checkIn, dodge, eat, friendDue, migrate, mood, moveOn, newShark, scare, tick } from './care'
+import { RULES, catchUp, checkIn, dodge, eat, friendDue, migrate, mood, moveOn, newShark, scare, swimOnIfReady, tick } from './care'
 
 const T0 = new Date(2026, 10, 21, 9, 0).getTime()
 const HOUR = 3600_000
@@ -161,6 +161,20 @@ describe('sea map progress', () => {
     expect(s.levelGp).toBe(0)
     expect(s.gp).toBe(300) // Glow Points are kept
     expect(friendDue(s, 180)).toBe(false)
+  })
+
+  it('a shark that stayed behind (next place not built yet) swims on once it is', () => {
+    const s = newShark(T0)
+    s.level = 3; s.levelGp = 90
+    s.friends = [{ level: 1, name: 'Pip' }, { level: 2, name: 'Coral' }, { level: 3, name: 'Nori' }]
+    expect(swimOnIfReady(s, (n) => n <= 3, 20)).toBe(false)
+    expect(s.level).toBe(3)
+    expect(swimOnIfReady(s, (n) => n <= 4, 20)).toBe(true)
+    expect(s.level).toBe(4)
+    expect(s.levelGp).toBe(0)
+    // no friend at level 4 yet, so it stays there
+    expect(swimOnIfReady(s, () => true, 20)).toBe(false)
+    expect(s.level).toBe(4)
   })
 
   it('old saves start on level 1 with no friends', () => {
