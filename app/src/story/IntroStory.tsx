@@ -7,8 +7,7 @@ import { record } from '../game/ctx2d'
 import { paintScenery } from '../game/scenery'
 import { getSettings, loadSettings } from '../settings'
 import { colors } from '../theme'
-import { CAPTIONS, captionAt, STORY_SECONDS, Story } from './intro'
-import { narrate, prepareNarrator, stopNarration } from './narrator'
+import { captionAt, narrating, STORY_SECONDS, Story } from './intro'
 
 /**
  * The story is meant to be heard, so its music plays louder than the quiet
@@ -39,6 +38,8 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
   // The soundtrack is timed to the story (see tools/compose_story_music.py).
   const music = useAudioPlayer(require('../../assets/music/story.m4a'))
   const musicStatus = useAudioPlayerStatus(music)
+  // The narration is one recorded track on the same timeline (tools/make_narration.py).
+  const voice = useAudioPlayer(require('../../assets/voice/narration.m4a'))
   const [rolling, setRolling] = useState(false)
   /** Bumped by Restart: replays the story from the beginning. */
   const [run, setRun] = useState(0)
@@ -47,7 +48,6 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
   // If audio can't load, start anyway after a moment: the story works silently.
   useEffect(() => {
     void setAudioModeAsync({ playsInSilentMode: true }).catch(() => {})
-    void prepareNarrator()
     void loadSettings()
     const id = setTimeout(() => setRolling(true), 2000)
     return () => clearTimeout(id)
@@ -57,8 +57,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
   }, [musicStatus.isLoaded])
 
   const finish = () => {
-    stopNarration()
-    try { music.pause() } catch { /* already released */ }
+    try { music.pause(); voice.pause() } catch { /* already released */ }
     onDone()
   }
 
@@ -66,10 +65,8 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
   const duck = (on: boolean) => {
     try { music.volume = (on ? 0.4 : 1) * storyMusicVolume() } catch { /* ignore */ }
   }
-  useEffect(() => () => stopNarration(), [])
 
   const restart = () => {
-    stopNarration()
     duck(false)
     setEnded(false)
     setCaption('')
@@ -78,9 +75,8 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
   const toggleMute = () => {
     setMuted((m) => {
-      try { music.muted = !m } catch { /* ignore */ }
+      try { music.muted = !m; voice.muted = !m } catch { /* ignore */ }
       mutedRef.current = !m
-      if (!m) stopNarration()
       return !m
     })
   }
@@ -99,15 +95,16 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
     let raf = 0
     let t0 = Date.now() - from * 1000
     let syncAt = Date.now()
-    // narration cues still to speak (when previewing from the middle, skip the earlier ones)
-    let cue = CAPTIONS.findIndex((c) => c.t >= from - 0.3)
-    if (cue < 0) cue = CAPTIONS.length
     try {
       music.volume = storyMusicVolume()
       music.play()
       if (from > 0 || run > 0) void music.seekTo(from)
     } catch { /* play silently */ }
-    let lastCaption = '', endedSet = false
+    try {
+      voice.play()
+      if (from > 0 || run > 0) void voice.seekTo(from)
+    } catch { /* captions still show */ }
+    let lastCaption = '', endedSet = false, ducked = false
     const skipTimer = setTimeout(() => setCanSkip(true), 1500)
     const frame = () => {
       // Follow the music's clock so picture and sound never drift apart.
@@ -122,14 +119,14 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
             // Slightly off: nudge the picture to the music, which is what the ear notices.
             else if (Math.abs(off) > 0.12) t0 = Date.now() - at * 1000
           }
+          // Keep the voice on the same clock, so she speaks on her cues.
+          const pic = (Date.now() - t0) / 1000
+          if (voice.playing && pic < STORY_SECONDS && Math.abs(voice.currentTime - pic) > 0.25) void voice.seekTo(pic)
         } catch { /* keep the wall clock */ }
       }
       const t = (Date.now() - t0) / 1000
-      while (cue < CAPTIONS.length && t >= CAPTIONS[cue].t) {
-        // Only speak a line that is still on time; a stale one (e.g. after a hiccup) is skipped.
-        if (!mutedRef.current && t - CAPTIONS[cue].t < 1.5) narrate(CAPTIONS[cue].text, { onStart: () => duck(true), onEnd: () => duck(false) })
-        cue++
-      }
+      const speaking = !mutedRef.current && narrating(t)
+      if (speaking !== ducked) { ducked = speaking; duck(speaking) }
       const s = story.current, bg = scenery.current
       if (s && bg) {
         setPicture(record(s.W, s.H, makeFont, (ctx) => s.draw(ctx, t, () => ctx.drawPicture(bg))))
@@ -141,7 +138,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
     }
     raf = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(raf); clearTimeout(skipTimer) }
-  }, [rolling, startAt, music, run])
+  }, [rolling, startAt, music, voice, run])
 
   return (
     <View style={styles.root} onLayout={onLayout}>
@@ -151,7 +148,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
       {!ended && caption !== '' && (
         <View pointerEvents="none" style={[styles.captionWrap, { bottom: insets.bottom + 28 }]}>
-          <Text key={caption} style={styles.caption}>{caption}</Text>
+          <Text key={caption} style={styles.caption} numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.75}>{caption}</Text>
         </View>
       )}
 
@@ -189,7 +186,7 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
       {ended && (
         <View style={styles.titleWrap}>
-          <Text style={styles.title}>PocketShark</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>PocketShark</Text>
           <Text style={styles.tagline}>Help him glow, stay safe, and find friends, so pocket sharks aren’t so rare anymore.</Text>
           <Pressable onPress={finish} style={({ pressed }) => [styles.start, pressed && { opacity: 0.85 }]} accessibilityRole="button">
             <Text style={styles.startText}>Start</Text>
@@ -205,9 +202,11 @@ export function IntroStory({ onDone, startAt = 0 }: { onDone: () => void; startA
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.abyss },
-  captionWrap: { position: 'absolute', left: 18, right: 18, alignItems: 'center' },
+  captionWrap: { position: 'absolute', left: 16, right: 16, alignItems: 'center' },
   caption: {
-    color: colors.text, fontSize: 19, lineHeight: 26, fontWeight: '600', textAlign: 'center',
+    // maxWidth + flexShrink make long lines wrap inside the screen instead of running off it
+    maxWidth: '100%', flexShrink: 1,
+    color: colors.text, fontSize: 18, lineHeight: 24, fontWeight: '600', textAlign: 'center',
     paddingVertical: 12, paddingHorizontal: 18, borderRadius: 18, overflow: 'hidden', backgroundColor: 'rgba(3,10,20,0.72)',
   },
   skip: { position: 'absolute', right: 14, minHeight: 44, paddingHorizontal: 18, justifyContent: 'center', borderRadius: 999, backgroundColor: 'rgba(3,10,20,0.6)', borderWidth: 1, borderColor: colors.line },
@@ -217,8 +216,8 @@ const styles = StyleSheet.create({
   againText: { color: colors.glow, fontSize: 17, fontWeight: '600' },
   skipText: { color: colors.text, fontSize: 15, fontWeight: '600' },
   titleWrap: { position: 'absolute', left: 24, right: 24, top: '30%', alignItems: 'center' },
-  title: { color: colors.glow, fontSize: 46, fontWeight: '800', textShadowColor: 'rgba(125,255,154,0.6)', textShadowRadius: 18 },
-  tagline: { color: colors.text, fontSize: 18, lineHeight: 26, textAlign: 'center', marginTop: 12, marginBottom: 28, maxWidth: 340 },
+  title: { maxWidth: '100%', color: colors.glow, fontSize: 46, fontWeight: '800', textShadowColor: 'rgba(125,255,154,0.6)', textShadowRadius: 18 },
+  tagline: { color: colors.text, fontSize: 18, lineHeight: 26, textAlign: 'center', marginTop: 12, marginBottom: 28, maxWidth: '100%', width: 340, flexShrink: 1 },
   start: { minHeight: 56, minWidth: 200, borderRadius: 999, backgroundColor: colors.glow, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   startText: { color: '#04130a', fontSize: 20, fontWeight: '800' },
 })

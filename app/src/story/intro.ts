@@ -30,6 +30,18 @@ export const CAPTIONS: { t: number; text: string }[] = [
   { t: 63.9, text: 'And the snacks came swimming to his light!' },
 ]
 
+/**
+ * The recorded narration (assets/voice/narration.m4a, made by
+ * tools/make_narration.py): [start, length] in seconds for each caption line.
+ * Used to lower the music while she speaks. Regenerate together with the track.
+ */
+export const NARRATION: [number, number][] = [[0.7, 3.03], [9.9, 4.16], [16.3, 1.98], [27.9, 2.26], [32.6, 1.34], [41.4, 1.24], [43.2, 1.92], [46.3, 1.3], [48.6, 2.2], [54.1, 1.98], [57.4, 2.33], [61.7, 1.11], [64.0, 2.05]]
+
+/** True while the narrator is speaking at time t. */
+export function narrating(t: number): boolean {
+  return NARRATION.some(([a, d]) => t >= a - 0.15 && t <= a + d + 0.25)
+}
+
 export function captionAt(t: number): string {
   let cur = ''
   for (const c of CAPTIONS) if (t >= c.t) cur = c.text
@@ -270,9 +282,15 @@ export class Story {
       }
       ctx.globalAlpha = Math.min(1, (1 - k) * 2)
       ctx.fillStyle = '#e6f2ff'
-      ctx.font = `600 ${Math.round(S * 0.16)}px sans-serif`
+      const size = Math.round(S * 0.16)
+      ctx.font = `600 ${size}px sans-serif`
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-      ctx.fillText(c.text, o.x + S * 0.45, o.y - S * (0.55 + k * 0.35))
+      // keep the words inside the frame, even in the close-ups
+      const hw = this.W / (2 * cam.z), hh = this.H / (2 * cam.z), pad = 16 / cam.z
+      const half = c.text.length * size * 0.3
+      const tx = Math.max(cam.x - hw + pad + half, Math.min(cam.x + hw - pad - half, o.x + S * 0.45))
+      const ty = Math.max(cam.y - hh + pad + size + 60 / cam.z, o.y - S * (0.55 + k * 0.35))
+      ctx.fillText(c.text, tx, ty)
       ctx.globalAlpha = 1
     }
 

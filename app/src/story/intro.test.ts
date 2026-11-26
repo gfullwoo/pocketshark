@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { CAPTIONS, STORY_SECONDS, storyGlow } from './intro'
+import { CAPTIONS, NARRATION, STORY_SECONDS, storyGlow } from './intro'
 
-// Rough length of a spoken line at the narrator's pace (rate 0.9): about
-// 2.3 words a second, plus a short pause at commas, full stops and ellipses.
+// Measured length of each recorded line (see tools/make_narration.py).
 const spoken = (text: string) => {
-  const words = text.split(/\s+/).filter(Boolean).length
-  const pauses = (text.match(/[,.!?…]/g) ?? []).length
-  return words / 2.3 + pauses * 0.18 + 0.3
+  const i = CAPTIONS.findIndex((c) => c.text === text)
+  return NARRATION[i][0] - CAPTIONS[i].t + NARRATION[i][1]
 }
 const CALLS = [35, 37.6, 40.2] // the shark's own "Hello?" moments
 
 describe('narration timing', () => {
+  it('has a recording for every caption, starting on its cue', () => {
+    expect(NARRATION.length).toBe(CAPTIONS.length)
+    NARRATION.forEach(([a], i) => expect(Math.abs(a - CAPTIONS[i].t)).toBeLessThan(0.3))
+  })
+
   it('each line finishes before the next one starts', () => {
     for (let i = 0; i < CAPTIONS.length - 1; i++) {
       const end = CAPTIONS[i].t + spoken(CAPTIONS[i].text)
