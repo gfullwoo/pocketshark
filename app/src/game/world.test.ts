@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { hitCircles, touches, type Pred, type PredKind } from './predators'
-import { World } from './world'
+import { BARRACUDA, World } from './world'
 import { subLamp } from './submarine'
 import { PLAYER_LOOK } from './pocketShark'
 
@@ -448,7 +448,7 @@ describe('Coral Gardens hunters', () => {
     expect(p.ray!.state).toBe('leave')
   })
 
-  it('the barracuda stops and stares before it darts', () => {
+  it('the barracuda tracks, then freezes its aim (a fixed 1 s warning), darts at a dodgeable speed, and strikes once', () => {
     const w = makeWorld(), h = hooks()
     w.setLevel(4); w.nextSub = 999
     const p = w.spawnPredator('barracuda')
@@ -458,10 +458,34 @@ describe('Coral Gardens hunters', () => {
     w.update(1 / 60, true, false, h)
     expect(p.cuda!.state).toBe('lock')
     const x0 = p.x
-    run(w, h, 0.3)
-    expect(Math.abs(p.x - x0)).toBeLessThan(1) // holds still while locking on
-    run(w, h, 0.4)
-    expect(['dart', 'cool']).toContain(p.cuda!.state)
+    run(w, h, BARRACUDA.track + 0.05)
+    expect(p.cuda!.state).toBe('aim')
+    expect(Math.abs(p.x - x0)).toBeLessThan(1) // holds still while it stares
+    // swimming away while its aim is frozen: it keeps pointing where he was
+    const aimed = p.ang
+    placeShark(w, w.shark.x, w.shark.y - 150)
+    run(w, h, BARRACUDA.freeze - 0.1)
+    expect(p.ang).toBe(aimed)
+    run(w, h, 0.2)
+    expect(p.cuda!.state).toBe('dart')
+    expect(w.dartSpeed()).toBeLessThanOrEqual(w['maxSpeed']() * 3.01)
+    run(w, h, 2)
+    expect(h.onScare).not.toHaveBeenCalled() // he dodged
+    expect(p.cuda!.state).toBe('leave')
+    // no second strike on the way out
+    placeShark(w, p.x + p.dir * p.s, p.y)
+    w.update(1 / 60, true, false, h)
+    expect(p.cuda!.state).toBe('leave')
+  })
+
+  it('the barracuda still hits a pocket shark that stays put', () => {
+    const w = makeWorld(), h = hooks()
+    w.setLevel(4); w.nextSub = 999
+    const p = w.spawnPredator('barracuda')
+    p.x = 20; p.y = 300; p.ang = 0; p.dir = 1
+    w.pred = p
+    for (let i = 0; i < 150; i++) { placeShark(w, 20 + p.s * 1.6, 330); w.update(1 / 60, true, false, h) }
+    expect(h.onScare).toHaveBeenCalledTimes(1)
   })
 
   it('the eel lunges out of its hole at a shark in reach, and goes home after a while', () => {

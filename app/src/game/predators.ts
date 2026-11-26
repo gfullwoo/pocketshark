@@ -43,8 +43,12 @@ export interface Pred {
   crab?: { state: 'walk' | 'crouch' | 'air' | 'cool'; t: number; vx: number; vy: number; warned: boolean }
   /** Stingray only: gliding across, chasing the pocket shark (for a while), or leaving. `t` counts down. */
   ray?: { state: 'glide' | 'chase' | 'leave'; t: number }
-  /** Barracuda only: cruising, locking on (a short warning), darting in a straight line, or resting. */
-  cuda?: { state: 'cruise' | 'lock' | 'dart' | 'cool'; t: number }
+  /**
+   * Barracuda only: cruising; locking on (turns to track the shark); aiming
+   * (aim frozen, tensing up: the moment to dodge); darting in a straight line;
+   * then leaving (one strike per pass). `t` counts down in real seconds.
+   */
+  cuda?: { state: 'cruise' | 'lock' | 'aim' | 'dart' | 'leave'; t: number }
   /**
    * Moray eel only: it lives in a hole in the reef at (ax, ay). It peeks out,
    * lunges at a pocket shark that comes near (after a short warning), pulls
@@ -462,8 +466,11 @@ function drawRay(ctx: Ctx2D, p: Pred, t: number) {
 function drawBarracuda(ctx: Ctx2D, p: Pred, t: number) {
   const sc = p.s / 220, flip = Math.cos(p.ang) < 0 ? -1 : 1
   const wag = Math.sin(t * (p.cuda?.state === 'dart' ? 18 : 6) + p.ph) * 6
+  // tensing up before the dart: a quick shiver and a pull back
+  const aiming = p.cuda?.state === 'aim'
+  const shake = aiming ? Math.sin(t * 70) * 2.2 : 0, pull = aiming ? -6 : 0
   ctx.save()
-  ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.scale(sc, sc * flip)
+  ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.scale(sc, sc * flip); ctx.translate(pull, shake)
   ctx.lineJoin = 'round'
   // tail fin
   ctx.fillStyle = '#4c5d6c'
@@ -492,7 +499,7 @@ function drawBarracuda(ctx: Ctx2D, p: Pred, t: number) {
   ctx.fillStyle = '#fff'
   for (let x = 74; x <= 104; x += 6) { ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x + 2, 0); ctx.lineTo(x + 4, 4); ctx.closePath(); ctx.fill() }
   // eye: a fierce stare while locking on
-  const lock = p.cuda?.state === 'lock' || p.cuda?.state === 'dart'
+  const lock = p.cuda?.state === 'lock' || aiming || p.cuda?.state === 'dart'
   ctx.fillStyle = '#f6f2d8'; ctx.beginPath(); ctx.arc(84, -5, 5.5, 0, TAU); ctx.fill()
   ctx.fillStyle = '#0c1014'; ctx.beginPath(); ctx.arc(86, -5, lock ? 2 : 3.2, 0, TAU); ctx.fill()
   if (lock) { ctx.strokeStyle = '#0c1014'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(77, -12); ctx.lineTo(92, -8); ctx.stroke() }

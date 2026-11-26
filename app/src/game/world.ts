@@ -57,6 +57,9 @@ function pickKind(): Kind {
   }
   return 'krill'
 }
+/** Barracuda strike: seconds tracking, seconds with its aim frozen, dart speed (× the shark's top speed), dart length (× its size). */
+export const BARRACUDA = { track: 0.5, freeze: 0.5, speed: 3, reach: 2.2 }
+
 function pickPredator(hunters: Partial<Record<PredKind, number>>): PredKind {
   const list = Object.entries(hunters) as [PredKind, number][]
   let r = Math.random() * list.reduce((a, [, w]) => a + w, 0)
@@ -393,35 +396,44 @@ export class World {
 
   /**
    * The barracuda cruises across. When the pocket shark is ahead of it and
-   * close, it stops dead and stares (a short warning), then darts in a
-   * straight line at where the shark was, very fast, and cruises on.
+   * close, it stops and stares, turning to track him (0.5 s), then freezes its
+   * aim and tenses up (0.5 s): swimming out of its line now makes it miss. Then
+   * it darts in a straight line, about three times the shark's top speed, for a
+   * limited distance, and swims off. One strike per pass. The warning and the
+   * dart don't speed up with the level, so it stays dodgeable everywhere.
    */
   private updateBarracuda(pr: Pred, dt: number, d: number, home: boolean) {
     const q = (pr.cuda ??= { state: 'cruise', t: 0 }), W = this.W
-    q.t -= dt
-    if (q.state === 'cruise' || q.state === 'cool') {
+    const real = dt / this.diff.predSpeed // dt here is sped up by the level; timings use real seconds
+    q.t -= real
+    if (q.state === 'cruise' || q.state === 'leave') {
       this.turn(pr, pr.dir > 0 ? 0 : Math.PI, 1.2, dt)
-      const v = (W * 0.2 + 80) * (q.state === 'cool' ? 0.7 : 1)
+      const v = (W * 0.2 + 80) * (q.state === 'leave' ? 1.15 : 1)
       pr.x += Math.cos(pr.ang) * v * dt
       pr.y += Math.sin(pr.ang) * v * dt
-      if (q.state === 'cool' && q.t <= 0) q.state = 'cruise'
       const ahead = pr.dir > 0 ? this.shark.x > pr.x : this.shark.x < pr.x
-      if (q.state === 'cruise' && !pr.done && !home && ahead && d < pr.s * (1.6 + 0.6 * this.gI) && Math.abs(this.shark.y - pr.y) < pr.s * 0.8) {
-        q.state = 'lock'; q.t = 0.6; pr.hunt = true
+      if (q.state === 'cruise' && !pr.done && !home && ahead && d < pr.s * (1.5 + 0.5 * this.gI) && Math.abs(this.shark.y - pr.y) < pr.s * 0.7) {
+        q.state = 'lock'; q.t = BARRACUDA.track; pr.hunt = true
       }
     } else if (q.state === 'lock') {
-      // stop and aim
-      this.turn(pr, Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 6, dt)
-      pr.open = Math.min(1, pr.open + dt * 3)
-      if (q.t <= 0) { q.state = 'dart'; q.t = 0.5 }
+      // stop and track him
+      this.turn(pr, Math.atan2(this.shark.y - pr.y, this.shark.x - pr.x), 4, real)
+      pr.open = Math.min(1, pr.open + real * 2)
+      if (q.t <= 0) { q.state = 'aim'; q.t = BARRACUDA.freeze }
+    } else if (q.state === 'aim') {
+      // aim frozen: it will strike exactly where it's pointing now
+      if (q.t <= 0) { q.state = 'dart'; q.t = BARRACUDA.reach * pr.s / this.dartSpeed() }
     } else {
-      const v = W * 1.2 + 320
-      pr.x += Math.cos(pr.ang) * v * dt
-      pr.y += Math.sin(pr.ang) * v * dt
-      if (q.t <= 0) { q.state = 'cool'; q.t = 2.2; pr.hunt = false; pr.open = 0; pr.dir = Math.cos(pr.ang) >= 0 ? 1 : -1 }
+      const v = this.dartSpeed()
+      pr.x += Math.cos(pr.ang) * v * real
+      pr.y += Math.sin(pr.ang) * v * real
+      if (q.t <= 0) { q.state = 'leave'; pr.hunt = false; pr.open = 0; pr.dir = Math.cos(pr.ang) >= 0 ? 1 : -1 }
     }
     pr.y = Math.max(pr.s * 0.1, Math.min(this.SH - pr.s * 0.08, pr.y))
   }
+
+  /** How fast the barracuda darts: a few times the pocket shark's top speed. */
+  dartSpeed() { return this.maxSpeed() * BARRACUDA.speed }
 
   /**
    * The moray eel lives in a hole in the reef. It pokes its head out and
