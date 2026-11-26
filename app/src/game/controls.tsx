@@ -15,15 +15,21 @@ const DEADZONE = 0.12
 interface Insets { top: number; bottom: number; left: number; right: number }
 type Role = 'stick' | 'glow'
 
-export function useControls({ insets, onStick, onGlow }: {
+export function useControls({ insets, floorH = 0, onStick, onGlow }: {
   insets: Insets
+  /** Height of the floor band at the bottom of an upright screen (above the home indicator). */
+  floorH?: number
   onStick: (x: number, y: number) => void
   onGlow: (held: boolean) => void
 }) {
   const { width: W, height: H } = useWindowDimensions()
   const OUTER = STICK_R + KNOB_R
-  const rest = { x: insets.left + MARGIN + OUTER, y: H - insets.bottom - MARGIN - OUTER }
-  const glow = { x: W - insets.right - MARGIN - GLOW_R, y: H - insets.bottom - MARGIN - GLOW_R }
+  // upright: both sit centred in the floor band; sideways: in the bottom corners
+  const upright = H > W && floorH > 0
+  // centred in the band, but never so low the joystick ring is cut off at the bottom
+  const midY = H - insets.bottom - Math.max(floorH / 2, OUTER + 6)
+  const rest = { x: insets.left + MARGIN + OUTER, y: upright ? midY : H - insets.bottom - MARGIN - OUTER }
+  const glow = { x: W - insets.right - MARGIN - GLOW_R, y: upright ? midY : H - insets.bottom - MARGIN - GLOW_R }
 
   const roles = useRef(new Map<string, Role>())
   const base = useRef(rest)

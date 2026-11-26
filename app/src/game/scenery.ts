@@ -33,7 +33,11 @@ export function caveBox(W: number, H: number) {
   return { w, h, top: H - h }
 }
 
-export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_LOOK) {
+/**
+ * `floor`: extra sea floor painted below the scene (H … H + floor), where the
+ * joystick and Glow button sit on an upright phone, so it reads as sand, not a black bar.
+ */
+export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_LOOK, floor = 0) {
   setRock(look)
   const r = rng(20261121)
   const between = (a: number, b: number) => a + r() * (b - a)
@@ -44,13 +48,24 @@ export function paintScenery(c: Ctx, W: number, H: number, look: Look = DEFAULT_
   for (let i = 0; i < 125; i++) r() // keep the reef below laid out exactly as before
 
   // ---- seabed ----
-  const sand = c.createLinearGradient(0, H - 50, 0, H)
+  // the sand fades from lit at the top to shadow at the bottom of the screen
+  const sand = c.createLinearGradient(0, H - 50, 0, H + floor)
   sand.addColorStop(0, look.sand[0])
+  if (floor > 0) sand.addColorStop(0.45, look.sand[0])
   sand.addColorStop(1, look.sand[1])
   c.fillStyle = sand
-  c.beginPath(); c.moveTo(0, H)
+  c.beginPath(); c.moveTo(0, H + floor)
   for (let x = 0; x <= W + 20; x += 20) c.lineTo(x, seabedY(x, H))
-  c.lineTo(W, H); c.closePath(); c.fill()
+  c.lineTo(W, H + floor); c.closePath(); c.fill()
+  if (floor > 0) {
+    // pebbles and shells scattered over the near floor (its own seed, so the reef above stays the same)
+    const f = rng(99)
+    for (let i = 0; i < Math.round(W / 12); i++) {
+      const x = f() * W, y = H + 6 + f() * (floor - 10), k = (y - H) / floor
+      c.fillStyle = `rgba(${f() < 0.5 ? '170,180,190' : '200,185,150'},${(0.18 - k * 0.1) * (0.6 + f() * 0.6)})`
+      c.beginPath(); c.ellipse(x, y, 2 + f() * 4 * (1 + k), 1 + f() * 2.5 * (1 + k), 0, 0, TAU); c.fill()
+    }
+  }
   // ripples in the sand: soft wavy lines, light on top and shadow below
   if (look.ripples) {
     for (let row = 0; row < 4; row++) {

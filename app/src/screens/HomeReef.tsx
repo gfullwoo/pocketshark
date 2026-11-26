@@ -82,7 +82,7 @@ export function HomeReef({ visit, onWatchStory, onOpenMap, onPickPlace }: { visi
   const paintPlace = useCallback(() => {
     const w = world.current, { W } = size.current
     if (W <= 0) return
-    scenery.current = record(W, w.SH, makeFont, (ctx) => paintScenery(ctx, W, w.SH, w.look))
+    scenery.current = record(W, w.H, makeFont, (ctx) => paintScenery(ctx, W, w.SH, w.look, w.H - w.SH))
     backdrop.current = record(W, w.SH, makeFont, (ctx) => paintBackdrop(ctx, W, w.SH, w.look))
   }, [])
 
@@ -230,6 +230,8 @@ export function HomeReef({ visit, onWatchStory, onOpenMap, onPickPlace }: { visi
   // Left thumb: joystick. Right thumb: hold to glow. Both at once (multi-touch).
   const controls = useControls({
     insets,
+    // upright phone: centre the joystick and Glow button in the band of sea floor under the reef
+    floorH: CONTROLS_HEIGHT,
     onStick: (x, y) => world.current.setStick(x, y),
     onGlow: (held) => {
       world.current.glowHeld = held

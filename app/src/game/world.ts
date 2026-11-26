@@ -861,7 +861,7 @@ export class World {
     // a predator far off in the background swims behind the reef
     if (this.pred && this.farAway(this.pred)) this.drawDeep(ctx, this.pred, t)
     // seabed below the scene (under the on-screen controls)
-    ctx.fillStyle = '#030b16'
+    ctx.fillStyle = this.look.sand[1]
     ctx.fillRect(0, this.SH - 2, W, H - this.SH + 2)
     scenery()
     drawKelp(ctx, W, this.SH, t, this.look)
